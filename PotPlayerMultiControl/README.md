@@ -1,12 +1,13 @@
 # PotPlayer 多窗口控制 (PotPlayerMultiControl)
 
 **简介**
-- **项目**: 这是一个基于 Windows Forms 的小工具，用于向系统中所有运行的 PotPlayer 窗口发送播放/暂停命令（媒体播放/暂停），支持全局热键与图形界面。查看实现: [PotPlayerMultiControl/Program.cs](PotPlayerMultiControl/Program.cs)
+- **项目**: 这是一个基于 Windows Forms 的小工具，用于同时控制多个 PotPlayer 窗口的播放/暂停，以及将全部视频回到起始点。支持全局热键、管理员窗口识别与提权重启。实现见 [MainForm.cs](MainForm.cs)。
 
 **功能**
 - **自动发现**: 自动检测运行中的 PotPlayer 窗口（进程名包含 `PotPlayerMini` 变种）。
-- **批量控制**: 一键向所有发现的 PotPlayer 窗口发送播放/暂停命令。
-- **全局热键**: 默认注册 `Ctrl+Alt+Space` 为播放/暂停快捷键。
+- **批量控制**: 一键向所有发现的窗口发送播放/暂停，或回到起始点。
+- **全局热键**: `Ctrl+Alt+Space` 播放/暂停，`Ctrl+Alt+Home` 回到起始点。
+- **管理员窗口**: 列表中标记 `[管理员]`；普通权限无法控制时，可点击「以管理员身份重启」。
 - **日志**: 在本地应用数据目录记录运行日志，用于排查与审核。
 
 **先决条件**
@@ -29,8 +30,10 @@ dotnet publish PotPlayerMultiControl\PotPlayerMultiControl.csproj -c Release -r 
 
 **使用说明**
 - 启动应用后，窗口会列出检测到的 PotPlayer 窗口。
-- 点击“播放/暂停全部”按钮或使用全局热键 `Ctrl+Alt+Space`，程序会向每个 PotPlayer 窗口发送媒体播放/暂停命令（等同于媒体键）。
+- 点击“播放/暂停全部”或使用 `Ctrl+Alt+Space`，向每个 PotPlayer 窗口发送媒体播放/暂停。
+- 点击“回到起始点”或使用 `Ctrl+Alt+Home`，将全部视频跳到文件开头。
 - 点击“刷新列表”以重新扫描当前窗口。
+- 若列表中出现 `[管理员]` 且命令失败，点击“以管理员身份重启”。
 
 **日志位置**
 - 日志文件位于 `%LocalAppData%\PotPlayerMultiControl\app.log`，用于记录操作与错误信息。
@@ -38,6 +41,7 @@ dotnet publish PotPlayerMultiControl\PotPlayerMultiControl.csproj -c Release -r 
 **实现要点**
 - 使用 Win32 API 枚举窗口并通过进程名过滤 PotPlayer（支持 `PotPlayerMini64/ PotPlayerMini/ PotPlayerMini32`）。
 - 通过发送 `WM_APPCOMMAND`（`APPCOMMAND_MEDIA_PLAY_PAUSE`）实现播放/暂停控制。
+- 通过 `WM_COMMAND` `10243` 将视频跳到文件开头。
 
 **贡献与许可**
 - 欢迎贡献：提交 issue 或 pull request，保持变更小且有说明。

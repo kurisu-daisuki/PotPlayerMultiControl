@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Windows.Forms;
 
@@ -8,22 +10,22 @@ namespace PotPlayerMultiControl;
 
 public sealed partial class MainForm : Form
 {
-    // Windows 消息与热键相关常量
     private const int WmHotkey = 0x0312;
-    private const uint ModControl = 0x0002; // Ctrl
-    private const uint ModAlt = 0x0001; // Alt
-    private const uint ModNoRepeat = 0x4000; // 防止按键重复触发
-    private const uint VkSpace = 0x20; // 空格键
-    private const int HotkeyId = 1001; // 热键 ID
+    private const uint ModControl = 0x0002;
+    private const uint ModAlt = 0x0001;
+    private const uint ModNoRepeat = 0x4000;
+    private const uint VkSpace = 0x20;
+    private const uint VkHome = 0x24;
+    private const int PlayPauseHotkeyId = 1001;
+    private const int GoToStartHotkeyId = 1002;
 
-    // 用于向窗口发送媒体命令的消息与参数
     private const uint WmAppCommand = 0x0319;
-    private const int AppCommandMediaPlayPause = 14; // APPCOMMAND_MEDIA_PLAY_PAUSE
+    private const uint WmCommand = 0x0111;
+    private const int AppCommandMediaPlayPause = 14;
+    private const int CmdGoToBeginning = 10243;
 
-    // 日志文件路径（保存在 %LocalAppData%）
     private readonly string _logFilePath;
-
-    // 防抖/冷却机制，避免快速重复操作
+    private readonly bool _isElevated = ProcessIntegrity.IsCurrentProcessElevated();
     private readonly TimeSpan _toggleCooldown = TimeSpan.FromMilliseconds(400);
     private DateTime _lastToggleAt = DateTime.MinValue;
     private bool _toggleInProgress;
@@ -32,19 +34,26 @@ public sealed partial class MainForm : Form
     {
         InitializeComponent();
 
-        // 准备日志目录并确定日志文件路径
+        Text = _isElevated ? "PotPlayer 多窗口控制（管理员）" : "PotPlayer 多窗口控制";
+        elevateButton.Text = _isElevated ? "已是管理员" : "以管理员身份重启";
+        elevateButton.Enabled = !_isElevated;
+
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PotPlayerMultiControl");
         Directory.CreateDirectory(logDir);
         _logFilePath = Path.Combine(logDir, "app.log");
 
-        // 初始化显示与日志
         RefreshWindowList();
-        Log("应用启动");
+        Log(_isElevated ? "应用启动（管理员权限）" : "应用启动（普通权限）");
     }
 
     private void ToggleButton_Click(object? sender, EventArgs e)
     {
-        RequestToggle("按钮");
+        RequestCommand("按钮", "播放/暂停", TrySendPlayPause);
+    }
+
+    private void GoToStartButton_Click(object? sender, EventArgs e)
+    {
+        RequestCommand("按钮", "回到起始点", TrySendGoToStart);
     }
 
     private void RefreshButton_Click(object? sender, EventArgs e)
@@ -52,57 +61,72 @@ public sealed partial class MainForm : Form
         RefreshWindowList();
     }
 
-    // 窗口句柄创建后注册全局热键
+    private void ElevateButton_Click(object? sender, EventArgs e)
+    {
+        RestartElevated();
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        var result = RegisterHotKey(Handle, HotkeyId, ModControl | ModAlt | ModNoRepeat, VkSpace);
-        Log(result ? "全局热键注册成功: Ctrl+Alt+Space" : "全局热键注册失败");
+        var playPauseRegistered = RegisterHotKey(Handle, PlayPauseHotkeyId, ModControl | ModAlt | ModNoRepeat, VkSpace);
+        Log(playPauseRegistered ? "全局热键注册成功: Ctrl+Alt+Space" : "全局热键注册失败: Ctrl+Alt+Space");
+
+        var goToStartRegistered = RegisterHotKey(Handle, GoToStartHotkeyId, ModControl | ModAlt | ModNoRepeat, VkHome);
+        Log(goToStartRegistered ? "全局热键注册成功: Ctrl+Alt+Home" : "全局热键注册失败: Ctrl+Alt+Home");
     }
 
-    // 窗口关闭时注销热键并记录日志
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _ = UnregisterHotKey(Handle, HotkeyId);
+        _ = UnregisterHotKey(Handle, PlayPauseHotkeyId);
+        _ = UnregisterHotKey(Handle, GoToStartHotkeyId);
         Log("应用退出");
         base.OnFormClosed(e);
     }
 
-    // 处理窗口消息，用于捕获热键消息
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WmHotkey && m.WParam.ToInt32() == HotkeyId)
+        if (m.Msg == WmHotkey)
         {
-            Log("触发热键: Ctrl+Alt+Space");
-            RequestToggle("热键");
-            return;
+            var hotkeyId = m.WParam.ToInt32();
+            if (hotkeyId == PlayPauseHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Space");
+                RequestCommand("热键", "播放/暂停", TrySendPlayPause);
+                return;
+            }
+
+            if (hotkeyId == GoToStartHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Home");
+                RequestCommand("热键", "回到起始点", TrySendGoToStart);
+                return;
+            }
         }
 
         base.WndProc(ref m);
     }
 
-    // 请求一次播放/暂停操作（包含防抖与并发保护）
-    private void RequestToggle(string source)
+    private void RequestCommand(string source, string actionName, Func<nint, bool> send)
     {
         if (_toggleInProgress)
         {
-            Log($"忽略重复触发: {source}（上次操作尚未完成）");
+            Log($"忽略重复触发: {source} {actionName}（上次操作尚未完成）");
             return;
         }
 
         var now = DateTime.UtcNow;
         if (now - _lastToggleAt < _toggleCooldown)
         {
-            Log($"忽略重复触发: {source}（冷却中）");
+            Log($"忽略重复触发: {source} {actionName}（冷却中）");
             return;
         }
 
         _lastToggleAt = now;
-        ToggleAll();
+        SendToAll(actionName, send);
     }
 
-    // 向所有已发现的 PotPlayer 窗口发送播放/暂停命令
-    private void ToggleAll()
+    private void SendToAll(string actionName, Func<nint, bool> send)
     {
         _toggleInProgress = true;
         try
@@ -111,27 +135,37 @@ public sealed partial class MainForm : Form
             if (windows.Count == 0)
             {
                 statusLabel.Text = "未找到 PotPlayer 窗口";
-                Log("播放/暂停失败: 未找到 PotPlayer 窗口");
+                Log($"{actionName}失败: 未找到 PotPlayer 窗口");
                 return;
             }
 
             var success = 0;
+            var elevationBlocked = 0;
             foreach (var window in windows)
             {
-                if (TrySendPlayPause(window.Handle))
+                if (send(window.Handle))
                 {
                     success++;
-                    Log($"发送成功: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                    Log($"{actionName}成功: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                }
+                else if (!_isElevated && window.IsElevated)
+                {
+                    elevationBlocked++;
+                    Log($"{actionName}失败（UIPI，目标为管理员窗口）: 0x{window.Handle.ToInt64():X8} {window.Title}");
                 }
                 else
                 {
-                    Log($"发送失败: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                    Log($"{actionName}失败: 0x{window.Handle.ToInt64():X8} {window.Title}");
                 }
             }
 
-            statusLabel.Text = $"已发送播放/暂停到 {success}/{windows.Count} 个窗口";
+            statusLabel.Text = elevationBlocked > 0 && !_isElevated
+                ? $"已发送{actionName} {success}/{windows.Count}，{elevationBlocked} 个管理员窗口无法控制，请以管理员身份重启"
+                : $"已发送{actionName}到 {success}/{windows.Count} 个窗口";
             Log(statusLabel.Text);
+            var resultStatus = statusLabel.Text;
             RefreshWindowList(windows);
+            statusLabel.Text = resultStatus;
         }
         finally
         {
@@ -139,14 +173,23 @@ public sealed partial class MainForm : Form
         }
     }
 
-    // 通过发送 WM_APPCOMMAND (APPCOMMAND_MEDIA_PLAY_PAUSE) 到目标窗口实现播放/暂停
     private bool TrySendPlayPause(nint hwnd)
     {
         var lParam = (nint)(AppCommandMediaPlayPause << 16);
         return SendMessage(hwnd, WmAppCommand, hwnd, lParam) != nint.Zero;
     }
 
-    // 刷新并显示当前发现的 PotPlayer 窗口
+    private bool TrySendGoToStart(nint hwnd)
+    {
+        if (PostMessage(hwnd, WmCommand, CmdGoToBeginning, nint.Zero))
+        {
+            return true;
+        }
+
+        _ = SendMessage(hwnd, WmCommand, CmdGoToBeginning, nint.Zero);
+        return Marshal.GetLastWin32Error() != 5;
+    }
+
     private void RefreshWindowList()
     {
         RefreshWindowList(PotPlayerWindowFinder.FindAll());
@@ -157,14 +200,54 @@ public sealed partial class MainForm : Form
         listBox.Items.Clear();
         foreach (var window in windows)
         {
-            listBox.Items.Add($"0x{window.Handle.ToInt64():X8}  {window.ProcessName}  {window.Title}");
+            var elevationTag = window.IsElevated ? "  [管理员]" : "";
+            listBox.Items.Add($"0x{window.Handle.ToInt64():X8}  {window.ProcessName}{elevationTag}  {window.Title}");
         }
 
-        statusLabel.Text = $"已发现 {windows.Count} 个 PotPlayer 窗口";
+        var elevatedCount = windows.Count(window => window.IsElevated);
+        if (!_isElevated && elevatedCount > 0)
+        {
+            statusLabel.Text = $"已发现 {windows.Count} 个窗口，其中 {elevatedCount} 个以管理员运行，当前无法控制";
+            elevateButton.Enabled = true;
+        }
+        else
+        {
+            statusLabel.Text = $"已发现 {windows.Count} 个 PotPlayer 窗口";
+        }
+
         Log(statusLabel.Text);
     }
 
-    // 将日志写入界面与文件（简单容错，写文件失败时忽略）
+    private void RestartElevated()
+    {
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(exePath))
+        {
+            Log("无法以管理员身份重启: 找不到当前程序路径");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                UseShellExecute = true,
+                Verb = "runas"
+            });
+            Log("已请求管理员权限，当前窗口即将退出");
+            Close();
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            Log("已取消管理员权限请求");
+        }
+        catch (Exception ex)
+        {
+            Log($"以管理员身份重启失败: {ex.Message}");
+        }
+    }
+
     private void Log(string message)
     {
         var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}";
@@ -179,7 +262,6 @@ public sealed partial class MainForm : Form
         }
     }
 
-    // Win32 热键/消息相关 P/Invoke
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);
 
@@ -188,14 +270,86 @@ public sealed partial class MainForm : Form
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SendMessage(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessage(nint hWnd, uint msg, nint wParam, nint lParam);
 }
 
-// 表示一个 PotPlayer 窗口的简短信息（句柄、标题与进程名）
-internal sealed record PotPlayerWindow(nint Handle, string Title, string ProcessName);
+internal sealed record PotPlayerWindow(nint Handle, uint ProcessId, string Title, string ProcessName, bool IsElevated);
 
-/// <summary>
-/// 窗口查找器：枚举系统窗口并筛选出属于 PotPlayer 的主窗口。
-/// </summary>
+internal static class ProcessIntegrity
+{
+    private const uint ProcessQueryLimitedInformation = 0x1000;
+    private const uint TokenQuery = 0x0008;
+    private const int TokenElevationClass = 20;
+
+    public static bool IsCurrentProcessElevated()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    public static bool IsProcessElevated(uint processId)
+    {
+        var processHandle = OpenProcess(ProcessQueryLimitedInformation, false, processId);
+        if (processHandle == nint.Zero)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (!OpenProcessToken(processHandle, TokenQuery, out var tokenHandle))
+            {
+                return Marshal.GetLastWin32Error() == 5;
+            }
+
+            try
+            {
+                var elevation = new TokenElevation();
+                var size = Marshal.SizeOf<TokenElevation>();
+                if (!GetTokenInformation(tokenHandle, TokenElevationClass, out elevation, size, out _))
+                {
+                    return true;
+                }
+
+                return elevation.TokenIsElevated != 0;
+            }
+            finally
+            {
+                _ = CloseHandle(tokenHandle);
+            }
+        }
+        finally
+        {
+            _ = CloseHandle(processHandle);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TokenElevation
+    {
+        public int TokenIsElevated;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern nint OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(nint processHandle, uint desiredAccess, out nint tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetTokenInformation(
+        nint tokenHandle,
+        int tokenInformationClass,
+        out TokenElevation tokenInformation,
+        int tokenInformationLength,
+        out int returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(nint hObject);
+}
+
 internal static class PotPlayerWindowFinder
 {
     public static IReadOnlyList<PotPlayerWindow> FindAll()
@@ -204,7 +358,6 @@ internal static class PotPlayerWindowFinder
         var seenProcessIds = new HashSet<uint>();
         var currentProcessId = (uint)Environment.ProcessId;
 
-        // 枚举所有顶层窗口，过滤可见且为主窗口的窗口
         EnumWindows((hWnd, _) =>
         {
             if (!IsWindowVisible(hWnd))
@@ -223,13 +376,11 @@ internal static class PotPlayerWindowFinder
                 return true;
             }
 
-            // 忽略本进程
             if (pid == currentProcessId)
             {
                 return true;
             }
 
-            // 每个进程只处理一次
             if (!seenProcessIds.Add(pid))
             {
                 return true;
@@ -246,7 +397,6 @@ internal static class PotPlayerWindowFinder
             }
 
             var processName = process.ProcessName;
-            // 仅识别 PotPlayerMini 系列进程名
             if (!string.Equals(processName, "PotPlayerMini64", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(processName, "PotPlayerMini", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(processName, "PotPlayerMini32", StringComparison.OrdinalIgnoreCase))
@@ -260,14 +410,13 @@ internal static class PotPlayerWindowFinder
                 return true;
             }
 
-            windows.Add(new PotPlayerWindow(hWnd, title, processName));
+            windows.Add(new PotPlayerWindow(hWnd, pid, title, processName, ProcessIntegrity.IsProcessElevated(pid)));
             return true;
         }, nint.Zero);
 
         return windows;
     }
 
-    // 获取窗口标题字符串的帮助方法
     private static string GetWindowTextString(nint hWnd)
     {
         var length = GetWindowTextLength(hWnd);
@@ -276,7 +425,6 @@ internal static class PotPlayerWindowFinder
         return sb.ToString();
     }
 
-    // 判断是否为主窗口（无 owner）
     private static bool IsMainWindow(nint hWnd)
     {
         return GetWindow(hWnd, GwOwner) == nint.Zero;
