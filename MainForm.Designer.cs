@@ -15,6 +15,8 @@ partial class MainForm
     private Button forwardButton;
     private Label seekSecondsLabel;
     private NumericUpDown seekSecondsUpDown;
+    private Button windowListToggle;
+    private Button logToggle;
     private ListBox listBox;
     private TextBox logTextBox;
 
@@ -42,6 +44,8 @@ partial class MainForm
         forwardButton = new Button();
         seekSecondsLabel = new Label();
         seekSecondsUpDown = new NumericUpDown();
+        windowListToggle = new Button();
+        logToggle = new Button();
         listBox = new ListBox();
         logTextBox = new TextBox();
         SuspendLayout();
@@ -165,32 +169,62 @@ partial class MainForm
         seekSecondsUpDown.Value = new decimal(new int[] { 5, 0, 0, 0 });
         seekSecondsUpDown.ValueChanged += SeekSecondsUpDown_ValueChanged;
         // 
+        // windowListToggle
+        // 
+        windowListToggle.FlatStyle = FlatStyle.Flat;
+        windowListToggle.Location = new Point(16, 208);
+        windowListToggle.Name = "windowListToggle";
+        windowListToggle.Size = new Size(568, 28);
+        windowListToggle.TabIndex = 12;
+        windowListToggle.Text = "▶ 窗口列表";
+        windowListToggle.TextAlign = ContentAlignment.MiddleLeft;
+        windowListToggle.UseVisualStyleBackColor = true;
+        windowListToggle.Click += WindowListToggle_Click;
+        // 
+        // logToggle
+        // 
+        logToggle.FlatStyle = FlatStyle.Flat;
+        logToggle.Location = new Point(16, 242);
+        logToggle.Name = "logToggle";
+        logToggle.Size = new Size(568, 28);
+        logToggle.TabIndex = 13;
+        logToggle.Text = "▶ 命令栏";
+        logToggle.TextAlign = ContentAlignment.MiddleLeft;
+        logToggle.UseVisualStyleBackColor = true;
+        logToggle.Click += LogToggle_Click;
+        // 
         // listBox
         // 
         listBox.FormattingEnabled = true;
         listBox.ItemHeight = 15;
-        listBox.Location = new Point(16, 208);
+        listBox.Location = new Point(16, 242);
         listBox.Name = "listBox";
         listBox.Size = new Size(568, 190);
-        listBox.TabIndex = 12;
+        listBox.TabIndex = 14;
+        listBox.Visible = false;
         // 
         // logTextBox
         // 
-        logTextBox.Location = new Point(16, 408);
+        logTextBox.Location = new Point(16, 276);
         logTextBox.Multiline = true;
         logTextBox.Name = "logTextBox";
         logTextBox.ReadOnly = true;
         logTextBox.ScrollBars = ScrollBars.Vertical;
         logTextBox.Size = new Size(568, 236);
-        logTextBox.TabIndex = 13;
+        logTextBox.TabIndex = 15;
+        logTextBox.Visible = false;
         // 
         // MainForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(600, 664);
+        ClientSize = new Size(600, 286);
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
         Controls.Add(logTextBox);
         Controls.Add(listBox);
+        Controls.Add(logToggle);
+        Controls.Add(windowListToggle);
         Controls.Add(seekSecondsUpDown);
         Controls.Add(seekSecondsLabel);
         Controls.Add(forwardButton);

@@ -44,6 +44,15 @@ public sealed partial class MainForm : Form
     private const uint SwpShowWindow = 0x0040;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNoTopmost = -2;
+    private const int DetailsTop = 208;
+    private const int HeaderHeight = 28;
+    private const int SectionGap = 6;
+    private const int ListHeight = 190;
+    private const int LogHeight = 236;
+    private const int BottomPadding = 16;
+    private const int ContentLeft = 16;
+    private const int ContentWidth = 568;
+    private const int FormWidth = 600;
 
     private readonly string _logFilePath;
     private readonly string _settingsFilePath;
@@ -53,6 +62,8 @@ public sealed partial class MainForm : Form
     private DateTime _lastToggleAt = DateTime.MinValue;
     private bool _toggleInProgress;
     private bool _loadingSettings;
+    private bool _windowListExpanded;
+    private bool _logExpanded;
 
     public MainForm()
     {
@@ -70,6 +81,7 @@ public sealed partial class MainForm : Form
 
         LoadSettings();
         UpdateSeekButtonTexts();
+        ApplyDetailsLayout();
         RefreshWindowList();
         Log(_isElevated ? "应用启动（管理员权限）" : "应用启动（普通权限）");
     }
@@ -130,6 +142,53 @@ public sealed partial class MainForm : Form
     {
         UpdateSeekButtonTexts();
         SaveSettings();
+    }
+
+    private void WindowListToggle_Click(object? sender, EventArgs e)
+    {
+        _windowListExpanded = !_windowListExpanded;
+        ApplyDetailsLayout();
+    }
+
+    private void LogToggle_Click(object? sender, EventArgs e)
+    {
+        _logExpanded = !_logExpanded;
+        ApplyDetailsLayout();
+    }
+
+    private void ApplyDetailsLayout()
+    {
+        SuspendLayout();
+        var y = DetailsTop;
+
+        windowListToggle.Location = new Point(ContentLeft, y);
+        windowListToggle.Text = _windowListExpanded ? "▼ 窗口列表" : "▶ 窗口列表";
+        y += HeaderHeight + SectionGap;
+
+        listBox.Visible = _windowListExpanded;
+        if (_windowListExpanded)
+        {
+            listBox.Location = new Point(ContentLeft, y);
+            y += ListHeight + SectionGap;
+        }
+
+        logToggle.Location = new Point(ContentLeft, y);
+        logToggle.Text = _logExpanded ? "▼ 命令栏" : "▶ 命令栏";
+        y += HeaderHeight + SectionGap;
+
+        logTextBox.Visible = _logExpanded;
+        if (_logExpanded)
+        {
+            logTextBox.Location = new Point(ContentLeft, y);
+            y += LogHeight + BottomPadding;
+        }
+        else
+        {
+            y += BottomPadding - SectionGap;
+        }
+
+        ClientSize = new Size(FormWidth, y);
+        ResumeLayout(true);
     }
 
     protected override void OnHandleCreated(EventArgs e)
