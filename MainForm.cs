@@ -16,13 +16,23 @@ public sealed partial class MainForm : Form
     private const uint ModNoRepeat = 0x4000;
     private const uint VkSpace = 0x20;
     private const uint VkHome = 0x24;
+    private const uint VkUp = 0x26;
+    private const uint VkDown = 0x28;
     private const int PlayPauseHotkeyId = 1001;
     private const int GoToStartHotkeyId = 1002;
+    private const int ShowAllHotkeyId = 1003;
+    private const int MinimizeAllHotkeyId = 1004;
 
     private const uint WmAppCommand = 0x0319;
     private const uint WmCommand = 0x0111;
     private const int AppCommandMediaPlayPause = 14;
     private const int CmdGoToBeginning = 10243;
+    private const int SwMinimize = 6;
+    private const int SwRestore = 9;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpShowWindow = 0x0040;
 
     private readonly string _logFilePath;
     private readonly bool _isElevated = ProcessIntegrity.IsCurrentProcessElevated();
@@ -56,6 +66,16 @@ public sealed partial class MainForm : Form
         RequestCommand("按钮", "回到起始点", TrySendGoToStart);
     }
 
+    private void ShowAllButton_Click(object? sender, EventArgs e)
+    {
+        RequestCommand("按钮", "显示窗口", TryShowWindow);
+    }
+
+    private void MinimizeAllButton_Click(object? sender, EventArgs e)
+    {
+        RequestCommand("按钮", "最小化窗口", TryMinimizeWindow);
+    }
+
     private void RefreshButton_Click(object? sender, EventArgs e)
     {
         RefreshWindowList();
@@ -74,12 +94,20 @@ public sealed partial class MainForm : Form
 
         var goToStartRegistered = RegisterHotKey(Handle, GoToStartHotkeyId, ModControl | ModAlt | ModNoRepeat, VkHome);
         Log(goToStartRegistered ? "全局热键注册成功: Ctrl+Alt+Home" : "全局热键注册失败: Ctrl+Alt+Home");
+
+        var showAllRegistered = RegisterHotKey(Handle, ShowAllHotkeyId, ModControl | ModAlt | ModNoRepeat, VkUp);
+        Log(showAllRegistered ? "全局热键注册成功: Ctrl+Alt+Up" : "全局热键注册失败: Ctrl+Alt+Up");
+
+        var minimizeAllRegistered = RegisterHotKey(Handle, MinimizeAllHotkeyId, ModControl | ModAlt | ModNoRepeat, VkDown);
+        Log(minimizeAllRegistered ? "全局热键注册成功: Ctrl+Alt+Down" : "全局热键注册失败: Ctrl+Alt+Down");
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         _ = UnregisterHotKey(Handle, PlayPauseHotkeyId);
         _ = UnregisterHotKey(Handle, GoToStartHotkeyId);
+        _ = UnregisterHotKey(Handle, ShowAllHotkeyId);
+        _ = UnregisterHotKey(Handle, MinimizeAllHotkeyId);
         Log("应用退出");
         base.OnFormClosed(e);
     }
@@ -100,6 +128,20 @@ public sealed partial class MainForm : Form
             {
                 Log("触发热键: Ctrl+Alt+Home");
                 RequestCommand("热键", "回到起始点", TrySendGoToStart);
+                return;
+            }
+
+            if (hotkeyId == ShowAllHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Up");
+                RequestCommand("热键", "显示窗口", TryShowWindow);
+                return;
+            }
+
+            if (hotkeyId == MinimizeAllHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Down");
+                RequestCommand("热键", "最小化窗口", TryMinimizeWindow);
                 return;
             }
         }
@@ -190,6 +232,19 @@ public sealed partial class MainForm : Form
         return Marshal.GetLastWin32Error() != 5;
     }
 
+    private bool TryShowWindow(nint hwnd)
+    {
+        _ = ShowWindowAsync(hwnd, SwRestore);
+        _ = SetWindowPos(hwnd, nint.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow | SwpNoActivate);
+        return IsWindowVisible(hwnd) && !IsIconic(hwnd);
+    }
+
+    private bool TryMinimizeWindow(nint hwnd)
+    {
+        _ = ShowWindowAsync(hwnd, SwMinimize);
+        return IsIconic(hwnd);
+    }
+
     private void RefreshWindowList()
     {
         RefreshWindowList(PotPlayerWindowFinder.FindAll());
@@ -273,6 +328,18 @@ public sealed partial class MainForm : Form
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(nint hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint hWnd);
 }
 
 internal sealed record PotPlayerWindow(nint Handle, uint ProcessId, string Title, string ProcessName, bool IsElevated);
@@ -360,7 +427,7 @@ internal static class PotPlayerWindowFinder
 
         EnumWindows((hWnd, _) =>
         {
-            if (!IsWindowVisible(hWnd))
+            if (!IsWindowVisible(hWnd) && !IsIconic(hWnd))
             {
                 return true;
             }
@@ -439,6 +506,9 @@ internal static class PotPlayerWindowFinder
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsIconic(nint hWnd);
 
     [DllImport("user32.dll")]
     private static extern int GetWindowTextLength(nint hWnd);
