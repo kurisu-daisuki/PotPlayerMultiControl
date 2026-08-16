@@ -10,6 +10,11 @@ partial class MainForm
     private Button minimizeAllButton;
     private Button refreshButton;
     private Button elevateButton;
+    private Button pinTopButton;
+    private Button rewindButton;
+    private Button forwardButton;
+    private Label seekSecondsLabel;
+    private NumericUpDown seekSecondsUpDown;
     private ListBox listBox;
     private TextBox logTextBox;
 
@@ -32,6 +37,11 @@ partial class MainForm
         minimizeAllButton = new Button();
         refreshButton = new Button();
         elevateButton = new Button();
+        pinTopButton = new Button();
+        rewindButton = new Button();
+        forwardButton = new Button();
+        seekSecondsLabel = new Label();
+        seekSecondsUpDown = new NumericUpDown();
         listBox = new ListBox();
         logTextBox = new TextBox();
         SuspendLayout();
@@ -105,32 +115,87 @@ partial class MainForm
         elevateButton.UseVisualStyleBackColor = true;
         elevateButton.Click += ElevateButton_Click;
         // 
+        // pinTopButton
+        // 
+        pinTopButton.Location = new Point(16, 128);
+        pinTopButton.Name = "pinTopButton";
+        pinTopButton.Size = new Size(220, 32);
+        pinTopButton.TabIndex = 7;
+        pinTopButton.Text = "置顶控制窗口";
+        pinTopButton.UseVisualStyleBackColor = true;
+        pinTopButton.Click += PinTopButton_Click;
+        // 
+        // rewindButton
+        // 
+        rewindButton.Location = new Point(246, 128);
+        rewindButton.Name = "rewindButton";
+        rewindButton.Size = new Size(162, 32);
+        rewindButton.TabIndex = 8;
+        rewindButton.Text = "后退 5秒 (Ctrl+Alt+←)";
+        rewindButton.UseVisualStyleBackColor = true;
+        rewindButton.Click += RewindButton_Click;
+        // 
+        // forwardButton
+        // 
+        forwardButton.Location = new Point(418, 128);
+        forwardButton.Name = "forwardButton";
+        forwardButton.Size = new Size(166, 32);
+        forwardButton.TabIndex = 9;
+        forwardButton.Text = "快进 5秒 (Ctrl+Alt+→)";
+        forwardButton.UseVisualStyleBackColor = true;
+        forwardButton.Click += ForwardButton_Click;
+        // 
+        // seekSecondsLabel
+        // 
+        seekSecondsLabel.AutoSize = true;
+        seekSecondsLabel.Location = new Point(246, 174);
+        seekSecondsLabel.Name = "seekSecondsLabel";
+        seekSecondsLabel.Size = new Size(79, 15);
+        seekSecondsLabel.TabIndex = 10;
+        seekSecondsLabel.Text = "时间跨度(秒)";
+        // 
+        // seekSecondsUpDown
+        // 
+        seekSecondsUpDown.Location = new Point(338, 170);
+        seekSecondsUpDown.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
+        seekSecondsUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+        seekSecondsUpDown.Name = "seekSecondsUpDown";
+        seekSecondsUpDown.Size = new Size(70, 23);
+        seekSecondsUpDown.TabIndex = 11;
+        seekSecondsUpDown.Value = new decimal(new int[] { 5, 0, 0, 0 });
+        seekSecondsUpDown.ValueChanged += SeekSecondsUpDown_ValueChanged;
+        // 
         // listBox
         // 
         listBox.FormattingEnabled = true;
         listBox.ItemHeight = 15;
-        listBox.Location = new Point(16, 132);
+        listBox.Location = new Point(16, 208);
         listBox.Name = "listBox";
         listBox.Size = new Size(568, 190);
-        listBox.TabIndex = 7;
+        listBox.TabIndex = 12;
         // 
         // logTextBox
         // 
-        logTextBox.Location = new Point(16, 332);
+        logTextBox.Location = new Point(16, 408);
         logTextBox.Multiline = true;
         logTextBox.Name = "logTextBox";
         logTextBox.ReadOnly = true;
         logTextBox.ScrollBars = ScrollBars.Vertical;
         logTextBox.Size = new Size(568, 236);
-        logTextBox.TabIndex = 8;
+        logTextBox.TabIndex = 13;
         // 
         // MainForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(600, 588);
+        ClientSize = new Size(600, 664);
         Controls.Add(logTextBox);
         Controls.Add(listBox);
+        Controls.Add(seekSecondsUpDown);
+        Controls.Add(seekSecondsLabel);
+        Controls.Add(forwardButton);
+        Controls.Add(rewindButton);
+        Controls.Add(pinTopButton);
         Controls.Add(elevateButton);
         Controls.Add(refreshButton);
         Controls.Add(minimizeAllButton);

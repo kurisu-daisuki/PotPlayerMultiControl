@@ -16,29 +16,43 @@ public sealed partial class MainForm : Form
     private const uint ModNoRepeat = 0x4000;
     private const uint VkSpace = 0x20;
     private const uint VkHome = 0x24;
+    private const uint VkLeft = 0x25;
     private const uint VkUp = 0x26;
+    private const uint VkRight = 0x27;
     private const uint VkDown = 0x28;
     private const int PlayPauseHotkeyId = 1001;
     private const int GoToStartHotkeyId = 1002;
     private const int ShowAllHotkeyId = 1003;
     private const int MinimizeAllHotkeyId = 1004;
+    private const int RewindHotkeyId = 1005;
+    private const int ForwardHotkeyId = 1006;
+    private const int DefaultSeekSeconds = 5;
 
     private const uint WmAppCommand = 0x0319;
     private const uint WmCommand = 0x0111;
+    private const uint WmUser = 0x0400;
     private const int AppCommandMediaPlayPause = 14;
     private const int CmdGoToBeginning = 10243;
+    private const int PotGetTotalTime = 0x5002;
+    private const int PotGetCurrentTime = 0x5004;
+    private const int PotSetCurrentTime = 0x5005;
     private const int SwMinimize = 6;
     private const int SwRestore = 9;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
+    private static readonly nint HwndTopmost = -1;
+    private static readonly nint HwndNoTopmost = -2;
 
     private readonly string _logFilePath;
+    private readonly string _settingsFilePath;
     private readonly bool _isElevated = ProcessIntegrity.IsCurrentProcessElevated();
     private readonly TimeSpan _toggleCooldown = TimeSpan.FromMilliseconds(400);
+    private readonly TimeSpan _seekCooldown = TimeSpan.FromMilliseconds(120);
     private DateTime _lastToggleAt = DateTime.MinValue;
     private bool _toggleInProgress;
+    private bool _loadingSettings;
 
     public MainForm()
     {
@@ -47,11 +61,15 @@ public sealed partial class MainForm : Form
         Text = _isElevated ? "PotPlayer 多窗口控制（管理员）" : "PotPlayer 多窗口控制";
         elevateButton.Text = _isElevated ? "已是管理员" : "以管理员身份重启";
         elevateButton.Enabled = !_isElevated;
+        UpdatePinTopButton();
 
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PotPlayerMultiControl");
         Directory.CreateDirectory(logDir);
         _logFilePath = Path.Combine(logDir, "app.log");
+        _settingsFilePath = Path.Combine(logDir, "settings.txt");
 
+        LoadSettings();
+        UpdateSeekButtonTexts();
         RefreshWindowList();
         Log(_isElevated ? "应用启动（管理员权限）" : "应用启动（普通权限）");
     }
@@ -86,6 +104,34 @@ public sealed partial class MainForm : Form
         RestartElevated();
     }
 
+    private void PinTopButton_Click(object? sender, EventArgs e)
+    {
+        TopMost = !TopMost;
+        UpdatePinTopButton();
+        Log(TopMost ? "控制窗口已置顶" : "控制窗口已取消置顶");
+    }
+
+    private void UpdatePinTopButton()
+    {
+        pinTopButton.Text = TopMost ? "取消控制窗口置顶" : "置顶控制窗口";
+    }
+
+    private void RewindButton_Click(object? sender, EventArgs e)
+    {
+        RequestSeek("按钮", rewind: true);
+    }
+
+    private void ForwardButton_Click(object? sender, EventArgs e)
+    {
+        RequestSeek("按钮", rewind: false);
+    }
+
+    private void SeekSecondsUpDown_ValueChanged(object? sender, EventArgs e)
+    {
+        UpdateSeekButtonTexts();
+        SaveSettings();
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
@@ -100,6 +146,12 @@ public sealed partial class MainForm : Form
 
         var minimizeAllRegistered = RegisterHotKey(Handle, MinimizeAllHotkeyId, ModControl | ModAlt | ModNoRepeat, VkDown);
         Log(minimizeAllRegistered ? "全局热键注册成功: Ctrl+Alt+Down" : "全局热键注册失败: Ctrl+Alt+Down");
+
+        var rewindRegistered = RegisterHotKey(Handle, RewindHotkeyId, ModControl | ModAlt | ModNoRepeat, VkLeft);
+        Log(rewindRegistered ? "全局热键注册成功: Ctrl+Alt+Left" : "全局热键注册失败: Ctrl+Alt+Left");
+
+        var forwardRegistered = RegisterHotKey(Handle, ForwardHotkeyId, ModControl | ModAlt | ModNoRepeat, VkRight);
+        Log(forwardRegistered ? "全局热键注册成功: Ctrl+Alt+Right" : "全局热键注册失败: Ctrl+Alt+Right");
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -108,6 +160,8 @@ public sealed partial class MainForm : Form
         _ = UnregisterHotKey(Handle, GoToStartHotkeyId);
         _ = UnregisterHotKey(Handle, ShowAllHotkeyId);
         _ = UnregisterHotKey(Handle, MinimizeAllHotkeyId);
+        _ = UnregisterHotKey(Handle, RewindHotkeyId);
+        _ = UnregisterHotKey(Handle, ForwardHotkeyId);
         Log("应用退出");
         base.OnFormClosed(e);
     }
@@ -144,12 +198,26 @@ public sealed partial class MainForm : Form
                 RequestCommand("热键", "最小化窗口", TryMinimizeWindow);
                 return;
             }
+
+            if (hotkeyId == RewindHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Left");
+                RequestSeek("热键", rewind: true);
+                return;
+            }
+
+            if (hotkeyId == ForwardHotkeyId)
+            {
+                Log("触发热键: Ctrl+Alt+Right");
+                RequestSeek("热键", rewind: false);
+                return;
+            }
         }
 
         base.WndProc(ref m);
     }
 
-    private void RequestCommand(string source, string actionName, Func<nint, bool> send)
+    private void RequestCommand(string source, string actionName, Func<nint, bool> send, TimeSpan? cooldown = null)
     {
         if (_toggleInProgress)
         {
@@ -158,7 +226,7 @@ public sealed partial class MainForm : Form
         }
 
         var now = DateTime.UtcNow;
-        if (now - _lastToggleAt < _toggleCooldown)
+        if (now - _lastToggleAt < (cooldown ?? _toggleCooldown))
         {
             Log($"忽略重复触发: {source} {actionName}（冷却中）");
             return;
@@ -166,6 +234,14 @@ public sealed partial class MainForm : Form
 
         _lastToggleAt = now;
         SendToAll(actionName, send);
+    }
+
+    private void RequestSeek(string source, bool rewind)
+    {
+        var seconds = SeekSeconds;
+        var deltaMs = seconds * 1000 * (rewind ? -1 : 1);
+        var actionName = rewind ? $"后退 {seconds}秒" : $"快进 {seconds}秒";
+        RequestCommand(source, actionName, hwnd => TrySendSeek(hwnd, deltaMs), _seekCooldown);
     }
 
     private void SendToAll(string actionName, Func<nint, bool> send)
@@ -232,15 +308,100 @@ public sealed partial class MainForm : Form
         return Marshal.GetLastWin32Error() != 5;
     }
 
+    private int SeekSeconds => Math.Max(1, (int)seekSecondsUpDown.Value);
+
+    private bool TrySendSeek(nint hwnd, int deltaMs)
+    {
+        SetLastError(0);
+        var current = SendMessage(hwnd, WmUser, PotGetCurrentTime, nint.Zero);
+        if (Marshal.GetLastWin32Error() == 5)
+        {
+            return false;
+        }
+
+        SetLastError(0);
+        var total = SendMessage(hwnd, WmUser, PotGetTotalTime, nint.Zero);
+        if (Marshal.GetLastWin32Error() == 5)
+        {
+            return false;
+        }
+
+        var currentMs = Math.Max(0L, current.ToInt64());
+        var totalMs = Math.Max(0L, total.ToInt64());
+        var target = currentMs + deltaMs;
+        if (target < 0)
+        {
+            target = 0;
+        }
+        else if (totalMs > 0 && target > totalMs)
+        {
+            target = totalMs;
+        }
+
+        SetLastError(0);
+        _ = SendMessage(hwnd, WmUser, PotSetCurrentTime, (nint)target);
+        return Marshal.GetLastWin32Error() != 5;
+    }
+
+    private void UpdateSeekButtonTexts()
+    {
+        var seconds = SeekSeconds;
+        rewindButton.Text = $"后退 {seconds}秒 (Ctrl+Alt+←)";
+        forwardButton.Text = $"快进 {seconds}秒 (Ctrl+Alt+→)";
+    }
+
+    private void LoadSettings()
+    {
+        _loadingSettings = true;
+        try
+        {
+            var seconds = DefaultSeekSeconds;
+            if (File.Exists(_settingsFilePath)
+                && int.TryParse(File.ReadAllText(_settingsFilePath).Trim(), out var saved)
+                && saved >= (int)seekSecondsUpDown.Minimum
+                && saved <= (int)seekSecondsUpDown.Maximum)
+            {
+                seconds = saved;
+            }
+
+            seekSecondsUpDown.Value = seconds;
+        }
+        catch
+        {
+            seekSecondsUpDown.Value = DefaultSeekSeconds;
+        }
+        finally
+        {
+            _loadingSettings = false;
+        }
+    }
+
+    private void SaveSettings()
+    {
+        if (_loadingSettings)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(_settingsFilePath, SeekSeconds.ToString(), Encoding.UTF8);
+        }
+        catch
+        {
+        }
+    }
+
     private bool TryShowWindow(nint hwnd)
     {
-        _ = ShowWindowAsync(hwnd, SwRestore);
-        _ = SetWindowPos(hwnd, nint.Zero, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow | SwpNoActivate);
+        _ = ShowWindow(hwnd, SwRestore);
+        _ = SetWindowPos(hwnd, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpShowWindow | SwpNoActivate);
         return IsWindowVisible(hwnd) && !IsIconic(hwnd);
     }
 
     private bool TryMinimizeWindow(nint hwnd)
     {
+        _ = SetWindowPos(hwnd, HwndNoTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
         _ = ShowWindowAsync(hwnd, SwMinimize);
         return IsIconic(hwnd);
     }
@@ -330,6 +491,9 @@ public sealed partial class MainForm : Form
     private static extern bool PostMessage(nint hWnd, uint msg, nint wParam, nint lParam);
 
     [DllImport("user32.dll")]
+    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
     private static extern bool ShowWindowAsync(nint hWnd, int nCmdShow);
 
     [DllImport("user32.dll")]
@@ -340,6 +504,9 @@ public sealed partial class MainForm : Form
 
     [DllImport("user32.dll")]
     private static extern bool IsIconic(nint hWnd);
+
+    [DllImport("kernel32.dll", EntryPoint = "SetLastError")]
+    private static extern void SetLastError(uint dwErrCode);
 }
 
 internal sealed record PotPlayerWindow(nint Handle, uint ProcessId, string Title, string ProcessName, bool IsElevated);
