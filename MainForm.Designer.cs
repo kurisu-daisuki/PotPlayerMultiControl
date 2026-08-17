@@ -3,6 +3,7 @@ namespace PotPlayerMultiControl;
 partial class MainForm
 {
     private System.ComponentModel.IContainer components = null;
+    private ToolTip toolTip;
     private Label statusLabel;
     private Button toggleButton;
     private Button goToStartButton;
@@ -32,6 +33,8 @@ partial class MainForm
 
     private void InitializeComponent()
     {
+        components = new System.ComponentModel.Container();
+        toolTip = new ToolTip(components);
         statusLabel = new Label();
         toggleButton = new Button();
         goToStartButton = new Button();
@@ -50,131 +53,100 @@ partial class MainForm
         logTextBox = new TextBox();
         SuspendLayout();
         // 
+        // toolTip
+        // 
+        toolTip.AutoPopDelay = 8000;
+        toolTip.InitialDelay = 300;
+        toolTip.ReshowDelay = 100;
+        toolTip.ShowAlways = true;
+        // 
         // statusLabel
         // 
-        statusLabel.AutoSize = true;
-        statusLabel.Location = new Point(16, 16);
+        statusLabel.AutoEllipsis = true;
+        statusLabel.Location = new Point(12, 8);
         statusLabel.Name = "statusLabel";
-        statusLabel.Size = new Size(68, 15);
+        statusLabel.Size = new Size(436, 18);
         statusLabel.TabIndex = 0;
         statusLabel.Text = "检测中...";
         // 
-        // toggleButton
-        // 
-        toggleButton.Location = new Point(16, 44);
-        toggleButton.Name = "toggleButton";
-        toggleButton.Size = new Size(220, 36);
-        toggleButton.TabIndex = 1;
-        toggleButton.Text = "播放/暂停全部 (Ctrl+Alt+Space)";
-        toggleButton.UseVisualStyleBackColor = true;
-        toggleButton.Click += ToggleButton_Click;
-        // 
         // goToStartButton
         // 
-        goToStartButton.Location = new Point(16, 86);
         goToStartButton.Name = "goToStartButton";
-        goToStartButton.Size = new Size(220, 36);
-        goToStartButton.TabIndex = 2;
-        goToStartButton.Text = "回到起始点 (Ctrl+Alt+Home)";
-        goToStartButton.UseVisualStyleBackColor = true;
+        goToStartButton.TabIndex = 1;
         goToStartButton.Click += GoToStartButton_Click;
-        // 
-        // showAllButton
-        // 
-        showAllButton.Location = new Point(246, 86);
-        showAllButton.Name = "showAllButton";
-        showAllButton.Size = new Size(162, 36);
-        showAllButton.TabIndex = 3;
-        showAllButton.Text = "显示全部 (Ctrl+Alt+↑)";
-        showAllButton.UseVisualStyleBackColor = true;
-        showAllButton.Click += ShowAllButton_Click;
-        // 
-        // minimizeAllButton
-        // 
-        minimizeAllButton.Location = new Point(418, 86);
-        minimizeAllButton.Name = "minimizeAllButton";
-        minimizeAllButton.Size = new Size(166, 36);
-        minimizeAllButton.TabIndex = 4;
-        minimizeAllButton.Text = "最小化全部 (Ctrl+Alt+↓)";
-        minimizeAllButton.UseVisualStyleBackColor = true;
-        minimizeAllButton.Click += MinimizeAllButton_Click;
-        // 
-        // refreshButton
-        // 
-        refreshButton.Location = new Point(246, 44);
-        refreshButton.Name = "refreshButton";
-        refreshButton.Size = new Size(110, 36);
-        refreshButton.TabIndex = 5;
-        refreshButton.Text = "刷新列表";
-        refreshButton.UseVisualStyleBackColor = true;
-        refreshButton.Click += RefreshButton_Click;
-        // 
-        // elevateButton
-        // 
-        elevateButton.Location = new Point(366, 44);
-        elevateButton.Name = "elevateButton";
-        elevateButton.Size = new Size(170, 36);
-        elevateButton.TabIndex = 6;
-        elevateButton.Text = "以管理员身份重启";
-        elevateButton.UseVisualStyleBackColor = true;
-        elevateButton.Click += ElevateButton_Click;
-        // 
-        // pinTopButton
-        // 
-        pinTopButton.Location = new Point(16, 128);
-        pinTopButton.Name = "pinTopButton";
-        pinTopButton.Size = new Size(220, 32);
-        pinTopButton.TabIndex = 7;
-        pinTopButton.Text = "置顶控制窗口";
-        pinTopButton.UseVisualStyleBackColor = true;
-        pinTopButton.Click += PinTopButton_Click;
         // 
         // rewindButton
         // 
-        rewindButton.Location = new Point(246, 128);
         rewindButton.Name = "rewindButton";
-        rewindButton.Size = new Size(162, 32);
-        rewindButton.TabIndex = 8;
-        rewindButton.Text = "后退 5秒 (Ctrl+Alt+←)";
-        rewindButton.UseVisualStyleBackColor = true;
+        rewindButton.TabIndex = 2;
         rewindButton.Click += RewindButton_Click;
+        // 
+        // toggleButton
+        // 
+        toggleButton.Name = "toggleButton";
+        toggleButton.TabIndex = 3;
+        toggleButton.Click += ToggleButton_Click;
         // 
         // forwardButton
         // 
-        forwardButton.Location = new Point(418, 128);
         forwardButton.Name = "forwardButton";
-        forwardButton.Size = new Size(166, 32);
-        forwardButton.TabIndex = 9;
-        forwardButton.Text = "快进 5秒 (Ctrl+Alt+→)";
-        forwardButton.UseVisualStyleBackColor = true;
+        forwardButton.TabIndex = 4;
         forwardButton.Click += ForwardButton_Click;
+        // 
+        // seekSecondsUpDown
+        // 
+        seekSecondsUpDown.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
+        seekSecondsUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+        seekSecondsUpDown.Name = "seekSecondsUpDown";
+        seekSecondsUpDown.Size = new Size(48, 23);
+        seekSecondsUpDown.TabIndex = 5;
+        seekSecondsUpDown.Value = new decimal(new int[] { 5, 0, 0, 0 });
+        seekSecondsUpDown.ValueChanged += SeekSecondsUpDown_ValueChanged;
         // 
         // seekSecondsLabel
         // 
         seekSecondsLabel.AutoSize = true;
-        seekSecondsLabel.Location = new Point(246, 174);
         seekSecondsLabel.Name = "seekSecondsLabel";
-        seekSecondsLabel.Size = new Size(79, 15);
-        seekSecondsLabel.TabIndex = 10;
-        seekSecondsLabel.Text = "时间跨度(秒)";
+        seekSecondsLabel.Size = new Size(19, 15);
+        seekSecondsLabel.TabIndex = 6;
+        seekSecondsLabel.Text = "秒";
         // 
-        // seekSecondsUpDown
+        // showAllButton
         // 
-        seekSecondsUpDown.Location = new Point(338, 170);
-        seekSecondsUpDown.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
-        seekSecondsUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
-        seekSecondsUpDown.Name = "seekSecondsUpDown";
-        seekSecondsUpDown.Size = new Size(70, 23);
-        seekSecondsUpDown.TabIndex = 11;
-        seekSecondsUpDown.Value = new decimal(new int[] { 5, 0, 0, 0 });
-        seekSecondsUpDown.ValueChanged += SeekSecondsUpDown_ValueChanged;
+        showAllButton.Name = "showAllButton";
+        showAllButton.TabIndex = 7;
+        showAllButton.Click += ShowAllButton_Click;
+        // 
+        // minimizeAllButton
+        // 
+        minimizeAllButton.Name = "minimizeAllButton";
+        minimizeAllButton.TabIndex = 8;
+        minimizeAllButton.Click += MinimizeAllButton_Click;
+        // 
+        // pinTopButton
+        // 
+        pinTopButton.Name = "pinTopButton";
+        pinTopButton.TabIndex = 9;
+        pinTopButton.Click += PinTopButton_Click;
+        // 
+        // refreshButton
+        // 
+        refreshButton.Name = "refreshButton";
+        refreshButton.TabIndex = 10;
+        refreshButton.Click += RefreshButton_Click;
+        // 
+        // elevateButton
+        // 
+        elevateButton.Name = "elevateButton";
+        elevateButton.TabIndex = 11;
+        elevateButton.Click += ElevateButton_Click;
         // 
         // windowListToggle
         // 
         windowListToggle.FlatStyle = FlatStyle.Flat;
-        windowListToggle.Location = new Point(16, 208);
+        windowListToggle.Location = new Point(12, 74);
         windowListToggle.Name = "windowListToggle";
-        windowListToggle.Size = new Size(568, 28);
+        windowListToggle.Size = new Size(436, 24);
         windowListToggle.TabIndex = 12;
         windowListToggle.Text = "▶ 窗口列表";
         windowListToggle.TextAlign = ContentAlignment.MiddleLeft;
@@ -184,9 +156,9 @@ partial class MainForm
         // logToggle
         // 
         logToggle.FlatStyle = FlatStyle.Flat;
-        logToggle.Location = new Point(16, 242);
+        logToggle.Location = new Point(12, 104);
         logToggle.Name = "logToggle";
-        logToggle.Size = new Size(568, 28);
+        logToggle.Size = new Size(436, 24);
         logToggle.TabIndex = 13;
         logToggle.Text = "▶ 命令栏";
         logToggle.TextAlign = ContentAlignment.MiddleLeft;
@@ -197,20 +169,20 @@ partial class MainForm
         // 
         listBox.FormattingEnabled = true;
         listBox.ItemHeight = 15;
-        listBox.Location = new Point(16, 242);
+        listBox.Location = new Point(12, 104);
         listBox.Name = "listBox";
-        listBox.Size = new Size(568, 190);
+        listBox.Size = new Size(436, 190);
         listBox.TabIndex = 14;
         listBox.Visible = false;
         // 
         // logTextBox
         // 
-        logTextBox.Location = new Point(16, 276);
+        logTextBox.Location = new Point(12, 134);
         logTextBox.Multiline = true;
         logTextBox.Name = "logTextBox";
         logTextBox.ReadOnly = true;
         logTextBox.ScrollBars = ScrollBars.Vertical;
-        logTextBox.Size = new Size(568, 236);
+        logTextBox.Size = new Size(436, 236);
         logTextBox.TabIndex = 15;
         logTextBox.Visible = false;
         // 
@@ -218,7 +190,7 @@ partial class MainForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(600, 286);
+        ClientSize = new Size(460, 140);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         Controls.Add(logTextBox);
@@ -227,15 +199,15 @@ partial class MainForm
         Controls.Add(windowListToggle);
         Controls.Add(seekSecondsUpDown);
         Controls.Add(seekSecondsLabel);
-        Controls.Add(forwardButton);
-        Controls.Add(rewindButton);
-        Controls.Add(pinTopButton);
         Controls.Add(elevateButton);
         Controls.Add(refreshButton);
+        Controls.Add(pinTopButton);
         Controls.Add(minimizeAllButton);
         Controls.Add(showAllButton);
-        Controls.Add(goToStartButton);
+        Controls.Add(forwardButton);
         Controls.Add(toggleButton);
+        Controls.Add(rewindButton);
+        Controls.Add(goToStartButton);
         Controls.Add(statusLabel);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;

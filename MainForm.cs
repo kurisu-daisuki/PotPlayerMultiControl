@@ -14,12 +14,12 @@ public sealed partial class MainForm : Form
     private const uint ModControl = 0x0002;
     private const uint ModAlt = 0x0001;
     private const uint ModNoRepeat = 0x4000;
-    private const uint VkSpace = 0x20;
-    private const uint VkHome = 0x24;
-    private const uint VkLeft = 0x25;
-    private const uint VkUp = 0x26;
-    private const uint VkRight = 0x27;
-    private const uint VkDown = 0x28;
+    private const uint VkPageUp = 0x21;
+    private const uint VkPageDown = 0x22;
+    private const uint VkH = 0x48;
+    private const uint VkJ = 0x4A;
+    private const uint VkK = 0x4B;
+    private const uint VkL = 0x4C;
     private const int PlayPauseHotkeyId = 1001;
     private const int GoToStartHotkeyId = 1002;
     private const int ShowAllHotkeyId = 1003;
@@ -44,15 +44,27 @@ public sealed partial class MainForm : Form
     private const uint SwpShowWindow = 0x0040;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNoTopmost = -2;
-    private const int DetailsTop = 208;
-    private const int HeaderHeight = 28;
+    private const int DetailsTop = 74;
+    private const int HeaderHeight = 24;
     private const int SectionGap = 6;
     private const int ListHeight = 190;
     private const int LogHeight = 236;
-    private const int BottomPadding = 16;
-    private const int ContentLeft = 16;
-    private const int ContentWidth = 568;
-    private const int FormWidth = 600;
+    private const int BottomPadding = 12;
+    private const int ContentLeft = 12;
+    private const int ContentWidth = 436;
+    private const int FormWidth = 460;
+    private const string IconGoToStart = "\uE100";
+    private const string IconRewind = "\uEB9E";
+    private const string IconPlayPause = "\uE768";
+    private const string IconForward = "\uEB9D";
+    private const string IconShowAll = "\uE8A7";
+    private const string IconMinimize = "\uE921";
+    private const string IconPin = "\uE718";
+    private const string IconUnpin = "\uE77A";
+    private const string IconRefresh = "\uE72C";
+    private const string IconAdmin = "\uEA18";
+
+    private readonly Font _iconFont = CreateIconFont();
 
     private readonly string _logFilePath;
     private readonly string _settingsFilePath;
@@ -70,9 +82,7 @@ public sealed partial class MainForm : Form
         InitializeComponent();
 
         Text = _isElevated ? "PotPlayer 多窗口控制（管理员）" : "PotPlayer 多窗口控制";
-        elevateButton.Text = _isElevated ? "已是管理员" : "以管理员身份重启";
-        elevateButton.Enabled = !_isElevated;
-        UpdatePinTopButton();
+        ConfigureToolbar();
 
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PotPlayerMultiControl");
         Directory.CreateDirectory(logDir);
@@ -123,9 +133,81 @@ public sealed partial class MainForm : Form
         Log(TopMost ? "控制窗口已置顶" : "控制窗口已取消置顶");
     }
 
+    private static Font CreateIconFont()
+    {
+        var names = FontFamily.Families.Select(family => family.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (names.Contains("Segoe MDL2 Assets"))
+        {
+            return new Font("Segoe MDL2 Assets", 11f);
+        }
+
+        if (names.Contains("Segoe Fluent Icons"))
+        {
+            return new Font("Segoe Fluent Icons", 11f);
+        }
+
+        return new Font("Segoe UI Symbol", 12f);
+    }
+
+    private void ConfigureToolbar()
+    {
+        const int buttonY = 32;
+        const int buttonSize = 30;
+        const int gap = 4;
+        const int groupGap = 10;
+        var x = ContentLeft;
+
+        void Place(Button button, string glyph, string tooltip)
+        {
+            button.Location = new Point(x, buttonY);
+            button.Size = new Size(buttonSize, buttonSize);
+            button.Font = _iconFont;
+            button.Text = glyph;
+            button.Cursor = Cursors.Hand;
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = Color.FromArgb(196, 196, 196);
+            button.UseVisualStyleBackColor = true;
+            toolTip.SetToolTip(button, tooltip);
+            x += buttonSize + gap;
+        }
+
+        Place(goToStartButton, IconGoToStart, "回到起始点 (Ctrl+Alt+H)");
+        Place(rewindButton, IconRewind, "后退 (Ctrl+Alt+J)");
+        Place(toggleButton, IconPlayPause, "播放/暂停全部 (Ctrl+Alt+K)");
+        Place(forwardButton, IconForward, "快进 (Ctrl+Alt+L)");
+        x += groupGap - gap;
+
+        seekSecondsUpDown.Location = new Point(x, buttonY + 3);
+        seekSecondsUpDown.Size = new Size(48, 23);
+        toolTip.SetToolTip(seekSecondsUpDown, "快进/后退时间跨度（秒）");
+        x += seekSecondsUpDown.Width + 4;
+        seekSecondsLabel.Location = new Point(x, buttonY + 8);
+        seekSecondsLabel.Text = "秒";
+        x += 20 + groupGap;
+
+        Place(showAllButton, IconShowAll, "显示全部并置顶 (Ctrl+Alt+PageUp)");
+        Place(minimizeAllButton, IconMinimize, "最小化全部 (Ctrl+Alt+PageDown)");
+        x += groupGap - gap;
+        Place(pinTopButton, IconPin, "置顶控制窗口");
+        Place(refreshButton, IconRefresh, "刷新窗口列表");
+        Place(elevateButton, IconAdmin, _isElevated ? "已是管理员" : "以管理员身份重启");
+        elevateButton.Enabled = !_isElevated;
+
+        statusLabel.Size = new Size(ContentWidth, 18);
+        windowListToggle.Size = new Size(ContentWidth, HeaderHeight);
+        logToggle.Size = new Size(ContentWidth, HeaderHeight);
+        listBox.Size = new Size(ContentWidth, ListHeight);
+        logTextBox.Size = new Size(ContentWidth, LogHeight);
+
+        UpdatePinTopButton();
+        UpdateSeekButtonTexts();
+    }
+
     private void UpdatePinTopButton()
     {
-        pinTopButton.Text = TopMost ? "取消控制窗口置顶" : "置顶控制窗口";
+        pinTopButton.Text = TopMost ? IconUnpin : IconPin;
+        toolTip.SetToolTip(pinTopButton, TopMost ? "取消控制窗口置顶" : "置顶控制窗口");
     }
 
     private void RewindButton_Click(object? sender, EventArgs e)
@@ -194,23 +276,18 @@ public sealed partial class MainForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        var playPauseRegistered = RegisterHotKey(Handle, PlayPauseHotkeyId, ModControl | ModAlt | ModNoRepeat, VkSpace);
-        Log(playPauseRegistered ? "全局热键注册成功: Ctrl+Alt+Space" : "全局热键注册失败: Ctrl+Alt+Space");
+        RegisterGlobalHotkey(PlayPauseHotkeyId, VkK, "Ctrl+Alt+K");
+        RegisterGlobalHotkey(GoToStartHotkeyId, VkH, "Ctrl+Alt+H");
+        RegisterGlobalHotkey(RewindHotkeyId, VkJ, "Ctrl+Alt+J");
+        RegisterGlobalHotkey(ForwardHotkeyId, VkL, "Ctrl+Alt+L");
+        RegisterGlobalHotkey(ShowAllHotkeyId, VkPageUp, "Ctrl+Alt+PageUp");
+        RegisterGlobalHotkey(MinimizeAllHotkeyId, VkPageDown, "Ctrl+Alt+PageDown");
+    }
 
-        var goToStartRegistered = RegisterHotKey(Handle, GoToStartHotkeyId, ModControl | ModAlt | ModNoRepeat, VkHome);
-        Log(goToStartRegistered ? "全局热键注册成功: Ctrl+Alt+Home" : "全局热键注册失败: Ctrl+Alt+Home");
-
-        var showAllRegistered = RegisterHotKey(Handle, ShowAllHotkeyId, ModControl | ModAlt | ModNoRepeat, VkUp);
-        Log(showAllRegistered ? "全局热键注册成功: Ctrl+Alt+Up" : "全局热键注册失败: Ctrl+Alt+Up");
-
-        var minimizeAllRegistered = RegisterHotKey(Handle, MinimizeAllHotkeyId, ModControl | ModAlt | ModNoRepeat, VkDown);
-        Log(minimizeAllRegistered ? "全局热键注册成功: Ctrl+Alt+Down" : "全局热键注册失败: Ctrl+Alt+Down");
-
-        var rewindRegistered = RegisterHotKey(Handle, RewindHotkeyId, ModControl | ModAlt | ModNoRepeat, VkLeft);
-        Log(rewindRegistered ? "全局热键注册成功: Ctrl+Alt+Left" : "全局热键注册失败: Ctrl+Alt+Left");
-
-        var forwardRegistered = RegisterHotKey(Handle, ForwardHotkeyId, ModControl | ModAlt | ModNoRepeat, VkRight);
-        Log(forwardRegistered ? "全局热键注册成功: Ctrl+Alt+Right" : "全局热键注册失败: Ctrl+Alt+Right");
+    private void RegisterGlobalHotkey(int id, uint virtualKey, string displayName)
+    {
+        var registered = RegisterHotKey(Handle, id, ModControl | ModAlt | ModNoRepeat, virtualKey);
+        Log(registered ? $"全局热键注册成功: {displayName}" : $"全局热键注册失败: {displayName}");
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
@@ -232,42 +309,42 @@ public sealed partial class MainForm : Form
             var hotkeyId = m.WParam.ToInt32();
             if (hotkeyId == PlayPauseHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Space");
+                Log("触发热键: Ctrl+Alt+K");
                 RequestCommand("热键", "播放/暂停", TrySendPlayPause);
                 return;
             }
 
             if (hotkeyId == GoToStartHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Home");
+                Log("触发热键: Ctrl+Alt+H");
                 RequestCommand("热键", "回到起始点", TrySendGoToStart);
                 return;
             }
 
             if (hotkeyId == ShowAllHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Up");
+                Log("触发热键: Ctrl+Alt+PageUp");
                 RequestCommand("热键", "显示窗口", TryShowWindow);
                 return;
             }
 
             if (hotkeyId == MinimizeAllHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Down");
+                Log("触发热键: Ctrl+Alt+PageDown");
                 RequestCommand("热键", "最小化窗口", TryMinimizeWindow);
                 return;
             }
 
             if (hotkeyId == RewindHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Left");
+                Log("触发热键: Ctrl+Alt+J");
                 RequestSeek("热键", rewind: true);
                 return;
             }
 
             if (hotkeyId == ForwardHotkeyId)
             {
-                Log("触发热键: Ctrl+Alt+Right");
+                Log("触发热键: Ctrl+Alt+L");
                 RequestSeek("热键", rewind: false);
                 return;
             }
@@ -405,8 +482,9 @@ public sealed partial class MainForm : Form
     private void UpdateSeekButtonTexts()
     {
         var seconds = SeekSeconds;
-        rewindButton.Text = $"后退 {seconds}秒 (Ctrl+Alt+←)";
-        forwardButton.Text = $"快进 {seconds}秒 (Ctrl+Alt+→)";
+        toolTip.SetToolTip(rewindButton, $"后退 {seconds}秒 (Ctrl+Alt+J)");
+        toolTip.SetToolTip(forwardButton, $"快进 {seconds}秒 (Ctrl+Alt+L)");
+        toolTip.SetToolTip(seekSecondsUpDown, $"快进/后退时间跨度：{seconds} 秒");
     }
 
     private void LoadSettings()
