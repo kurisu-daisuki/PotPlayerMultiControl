@@ -44,9 +44,19 @@ public sealed partial class MainForm : Form
     private const uint SwpShowWindow = 0x0040;
     private static readonly nint HwndTopmost = -1;
     private static readonly nint HwndNoTopmost = -2;
-    private const int DetailsTop = 74;
-    private const int HeaderHeight = 24;
-    private const int SectionGap = 6;
+    private static readonly Color ColorWindow = Color.FromArgb(246, 247, 249);
+    private static readonly Color ColorSurface = Color.White;
+    private static readonly Color ColorBorder = Color.FromArgb(218, 220, 224);
+    private static readonly Color ColorText = Color.FromArgb(32, 33, 36);
+    private static readonly Color ColorMuted = Color.FromArgb(95, 99, 104);
+    private static readonly Color ColorAccent = Color.FromArgb(26, 115, 232);
+    private static readonly Color ColorAccentHover = Color.FromArgb(21, 99, 204);
+    private static readonly Color ColorHover = Color.FromArgb(232, 240, 254);
+    private static readonly Color ColorActive = Color.FromArgb(210, 227, 252);
+    private static readonly Color ColorWarning = Color.FromArgb(179, 74, 12);
+    private const int DetailsTop = 78;
+    private const int HeaderHeight = 28;
+    private const int SectionGap = 8;
     private const int ListHeight = 190;
     private const int LogHeight = 236;
     private const int BottomPadding = 12;
@@ -65,6 +75,9 @@ public sealed partial class MainForm : Form
     private const string IconAdmin = "\uEA18";
 
     private readonly Font _iconFont = CreateIconFont();
+    private readonly Panel _sepPlayback = new();
+    private readonly Panel _sepSeek = new();
+    private readonly Panel _sepWindow = new();
 
     private readonly string _logFilePath;
     private readonly string _settingsFilePath;
@@ -76,10 +89,14 @@ public sealed partial class MainForm : Form
     private bool _loadingSettings;
     private bool _windowListExpanded;
     private bool _logExpanded;
+    private int _discoveredWindowCount;
 
     public MainForm()
     {
         InitializeComponent();
+        DoubleBuffered = true;
+        BackColor = ColorWindow;
+        ForeColor = ColorText;
 
         Text = _isElevated ? "PotPlayer 多窗口控制（管理员）" : "PotPlayer 多窗口控制";
         ConfigureToolbar();
@@ -138,12 +155,12 @@ public sealed partial class MainForm : Form
         var names = FontFamily.Families.Select(family => family.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (names.Contains("Segoe MDL2 Assets"))
         {
-            return new Font("Segoe MDL2 Assets", 11f);
+            return new Font("Segoe MDL2 Assets", 12f);
         }
 
         if (names.Contains("Segoe Fluent Icons"))
         {
-            return new Font("Segoe Fluent Icons", 11f);
+            return new Font("Segoe Fluent Icons", 12f);
         }
 
         return new Font("Segoe UI Symbol", 12f);
@@ -151,62 +168,143 @@ public sealed partial class MainForm : Form
 
     private void ConfigureToolbar()
     {
-        const int buttonY = 32;
-        const int buttonSize = 30;
-        const int gap = 4;
-        const int groupGap = 10;
+        const int buttonY = 36;
+        const int buttonSize = 32;
+        const int gap = 3;
+        const int groupGap = 12;
         var x = ContentLeft;
 
-        void Place(Button button, string glyph, string tooltip)
+        void Place(Button button, string glyph, string tooltip, bool primary = false)
         {
             button.Location = new Point(x, buttonY);
             button.Size = new Size(buttonSize, buttonSize);
             button.Font = _iconFont;
             button.Text = glyph;
-            button.Cursor = Cursors.Hand;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = Color.FromArgb(196, 196, 196);
-            button.UseVisualStyleBackColor = true;
+            button.Tag = primary ? "primary" : "icon";
+            StyleIconButton(button);
             toolTip.SetToolTip(button, tooltip);
             x += buttonSize + gap;
         }
 
         Place(goToStartButton, IconGoToStart, "回到起始点 (Ctrl+Alt+H)");
         Place(rewindButton, IconRewind, "后退 (Ctrl+Alt+J)");
-        Place(toggleButton, IconPlayPause, "播放/暂停全部 (Ctrl+Alt+K)");
+        Place(toggleButton, IconPlayPause, "播放/暂停全部 (Ctrl+Alt+K)", primary: true);
         Place(forwardButton, IconForward, "快进 (Ctrl+Alt+L)");
         x += groupGap - gap;
+        PlaceSeparator(_sepPlayback, x - groupGap / 2, buttonY, buttonSize);
+        x += 2;
 
-        seekSecondsUpDown.Location = new Point(x, buttonY + 3);
-        seekSecondsUpDown.Size = new Size(48, 23);
+        seekSecondsUpDown.Location = new Point(x, buttonY + 4);
+        seekSecondsUpDown.Size = new Size(46, 23);
+        seekSecondsUpDown.BorderStyle = BorderStyle.FixedSingle;
+        seekSecondsUpDown.BackColor = ColorSurface;
         toolTip.SetToolTip(seekSecondsUpDown, "快进/后退时间跨度（秒）");
         x += seekSecondsUpDown.Width + 4;
-        seekSecondsLabel.Location = new Point(x, buttonY + 8);
+        seekSecondsLabel.Location = new Point(x, buttonY + 9);
+        seekSecondsLabel.AutoSize = true;
+        seekSecondsLabel.ForeColor = ColorMuted;
         seekSecondsLabel.Text = "秒";
-        x += 20 + groupGap;
+        x += 18 + groupGap;
+        PlaceSeparator(_sepSeek, x - groupGap / 2, buttonY, buttonSize);
 
         Place(showAllButton, IconShowAll, "显示全部并置顶 (Ctrl+Alt+PageUp)");
         Place(minimizeAllButton, IconMinimize, "最小化全部 (Ctrl+Alt+PageDown)");
         x += groupGap - gap;
+        PlaceSeparator(_sepWindow, x - groupGap / 2, buttonY, buttonSize);
+
         Place(pinTopButton, IconPin, "置顶控制窗口");
         Place(refreshButton, IconRefresh, "刷新窗口列表");
-        Place(elevateButton, IconAdmin, _isElevated ? "已是管理员" : "以管理员身份重启");
+        Place(elevateButton, IconAdmin, _isElevated ? "当前已是管理员权限" : "以管理员身份重启");
         elevateButton.Enabled = !_isElevated;
 
-        statusLabel.Size = new Size(ContentWidth, 18);
+        statusLabel.Location = new Point(ContentLeft, 10);
+        statusLabel.Size = new Size(ContentWidth, 20);
+        statusLabel.ForeColor = ColorMuted;
+        StyleSectionToggle(windowListToggle);
+        StyleSectionToggle(logToggle);
         windowListToggle.Size = new Size(ContentWidth, HeaderHeight);
         logToggle.Size = new Size(ContentWidth, HeaderHeight);
+
+        listBox.BorderStyle = BorderStyle.FixedSingle;
+        listBox.BackColor = ColorSurface;
+        listBox.ForeColor = ColorText;
+        listBox.IntegralHeight = false;
         listBox.Size = new Size(ContentWidth, ListHeight);
+
+        logTextBox.BorderStyle = BorderStyle.FixedSingle;
+        logTextBox.BackColor = ColorSurface;
+        logTextBox.ForeColor = ColorMuted;
         logTextBox.Size = new Size(ContentWidth, LogHeight);
 
         UpdatePinTopButton();
         UpdateSeekButtonTexts();
+        StyleIconButton(elevateButton);
+    }
+
+    private void PlaceSeparator(Panel separator, int x, int y, int height)
+    {
+        separator.BackColor = ColorBorder;
+        separator.Location = new Point(x, y + 4);
+        separator.Size = new Size(1, height - 8);
+        if (!Controls.Contains(separator))
+        {
+            Controls.Add(separator);
+            separator.BringToFront();
+        }
+    }
+
+    private void StyleIconButton(Button button)
+    {
+        var primary = button.Tag as string == "primary";
+        var active = button == pinTopButton && TopMost;
+        button.Cursor = Cursors.Hand;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = primary ? ColorAccentHover : ColorHover;
+        button.FlatAppearance.MouseDownBackColor = primary ? ColorAccentHover : ColorActive;
+        button.UseVisualStyleBackColor = false;
+        if (!button.Enabled)
+        {
+            button.BackColor = ColorWindow;
+            button.ForeColor = Color.FromArgb(160, 160, 160);
+            return;
+        }
+
+        if (primary)
+        {
+            button.BackColor = ColorAccent;
+            button.ForeColor = Color.White;
+            return;
+        }
+
+        if (active)
+        {
+            button.BackColor = ColorActive;
+            button.ForeColor = ColorAccent;
+            return;
+        }
+
+        button.BackColor = ColorWindow;
+        button.ForeColor = ColorText;
+    }
+
+    private static void StyleSectionToggle(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = ColorHover;
+        button.UseVisualStyleBackColor = false;
+        button.BackColor = ColorWindow;
+        button.ForeColor = ColorText;
+        button.TextAlign = ContentAlignment.MiddleLeft;
+        button.Padding = new Padding(4, 0, 0, 0);
+        button.Cursor = Cursors.Hand;
     }
 
     private void UpdatePinTopButton()
     {
         pinTopButton.Text = TopMost ? IconUnpin : IconPin;
+        StyleIconButton(pinTopButton);
         toolTip.SetToolTip(pinTopButton, TopMost ? "取消控制窗口置顶" : "置顶控制窗口");
     }
 
@@ -244,7 +342,6 @@ public sealed partial class MainForm : Form
         var y = DetailsTop;
 
         windowListToggle.Location = new Point(ContentLeft, y);
-        windowListToggle.Text = _windowListExpanded ? "▼ 窗口列表" : "▶ 窗口列表";
         y += HeaderHeight + SectionGap;
 
         listBox.Visible = _windowListExpanded;
@@ -255,8 +352,8 @@ public sealed partial class MainForm : Form
         }
 
         logToggle.Location = new Point(ContentLeft, y);
-        logToggle.Text = _logExpanded ? "▼ 命令栏" : "▶ 命令栏";
         y += HeaderHeight + SectionGap;
+        UpdateSectionHeaders();
 
         logTextBox.Visible = _logExpanded;
         if (_logExpanded)
@@ -271,6 +368,15 @@ public sealed partial class MainForm : Form
 
         ClientSize = new Size(FormWidth, y);
         ResumeLayout(true);
+    }
+
+    private void UpdateSectionHeaders()
+    {
+        var chevronList = _windowListExpanded ? "▾" : "▸";
+        var chevronLog = _logExpanded ? "▾" : "▸";
+        var count = _discoveredWindowCount > 0 ? $"  ·  {_discoveredWindowCount}" : "";
+        windowListToggle.Text = $"{chevronList}  窗口列表{count}";
+        logToggle.Text = $"{chevronLog}  运行日志";
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -388,7 +494,7 @@ public sealed partial class MainForm : Form
             var windows = PotPlayerWindowFinder.FindAll();
             if (windows.Count == 0)
             {
-                statusLabel.Text = "未找到 PotPlayer 窗口";
+                SetStatus("未找到 PotPlayer 窗口");
                 Log($"{actionName}失败: 未找到 PotPlayer 窗口");
                 return;
             }
@@ -413,13 +519,16 @@ public sealed partial class MainForm : Form
                 }
             }
 
-            statusLabel.Text = elevationBlocked > 0 && !_isElevated
-                ? $"已发送{actionName} {success}/{windows.Count}，{elevationBlocked} 个管理员窗口无法控制，请以管理员身份重启"
-                : $"已发送{actionName}到 {success}/{windows.Count} 个窗口";
+            SetStatus(
+                elevationBlocked > 0 && !_isElevated
+                    ? $"已发送{actionName} {success}/{windows.Count}，{elevationBlocked} 个管理员窗口无法控制，请提权后重试"
+                    : $"已发送{actionName}到 {success}/{windows.Count} 个窗口",
+                warning: elevationBlocked > 0 && !_isElevated);
             Log(statusLabel.Text);
             var resultStatus = statusLabel.Text;
+            var resultWarning = statusLabel.ForeColor == ColorWarning;
             RefreshWindowList(windows);
-            statusLabel.Text = resultStatus;
+            SetStatus(resultStatus, resultWarning);
         }
         finally
         {
@@ -550,25 +659,35 @@ public sealed partial class MainForm : Form
 
     private void RefreshWindowList(IReadOnlyList<PotPlayerWindow> windows)
     {
+        _discoveredWindowCount = windows.Count;
         listBox.Items.Clear();
         foreach (var window in windows)
         {
-            var elevationTag = window.IsElevated ? "  [管理员]" : "";
-            listBox.Items.Add($"0x{window.Handle.ToInt64():X8}  {window.ProcessName}{elevationTag}  {window.Title}");
+            var title = string.IsNullOrWhiteSpace(window.Title) ? window.ProcessName : window.Title;
+            var elevationTag = window.IsElevated ? "  · 管理员" : "";
+            listBox.Items.Add($"{title}{elevationTag}");
         }
 
         var elevatedCount = windows.Count(window => window.IsElevated);
         if (!_isElevated && elevatedCount > 0)
         {
-            statusLabel.Text = $"已发现 {windows.Count} 个窗口，其中 {elevatedCount} 个以管理员运行，当前无法控制";
+            SetStatus($"发现 {windows.Count} 个窗口，其中 {elevatedCount} 个需管理员权限才能控制", warning: true);
             elevateButton.Enabled = true;
         }
         else
         {
-            statusLabel.Text = $"已发现 {windows.Count} 个 PotPlayer 窗口";
+            SetStatus(windows.Count == 0 ? "未发现 PotPlayer 窗口" : $"已发现 {windows.Count} 个 PotPlayer 窗口");
         }
 
+        StyleIconButton(elevateButton);
+        UpdateSectionHeaders();
         Log(statusLabel.Text);
+    }
+
+    private void SetStatus(string text, bool warning = false)
+    {
+        statusLabel.Text = text;
+        statusLabel.ForeColor = warning ? ColorWarning : ColorMuted;
     }
 
     private void RestartElevated()
@@ -723,36 +842,25 @@ internal static class ProcessIntegrity
 
 internal static class PotPlayerWindowFinder
 {
+    private const int GwOwner = 4;
+    private const int GwlExStyle = -20;
+    private const long WsExToolWindow = 0x00000080;
+    private const long WsExAppWindow = 0x00040000;
+
     public static IReadOnlyList<PotPlayerWindow> FindAll()
     {
-        var windows = new List<PotPlayerWindow>();
-        var seenProcessIds = new HashSet<uint>();
+        var candidates = new List<(nint Handle, uint ProcessId, string Title, string ProcessName, bool IsElevated, int Score)>();
         var currentProcessId = (uint)Environment.ProcessId;
 
         EnumWindows((hWnd, _) =>
         {
-            if (!IsWindowVisible(hWnd) && !IsIconic(hWnd))
-            {
-                return true;
-            }
-
-            if (!IsMainWindow(hWnd))
+            if (!IsMainWindow(hWnd) || IsToolWindow(hWnd))
             {
                 return true;
             }
 
             GetWindowThreadProcessId(hWnd, out var pid);
-            if (pid == 0)
-            {
-                return true;
-            }
-
-            if (pid == currentProcessId)
-            {
-                return true;
-            }
-
-            if (!seenProcessIds.Add(pid))
+            if (pid == 0 || pid == currentProcessId)
             {
                 return true;
             }
@@ -768,24 +876,55 @@ internal static class PotPlayerWindowFinder
             }
 
             var processName = process.ProcessName;
-            if (!string.Equals(processName, "PotPlayerMini64", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(processName, "PotPlayerMini", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(processName, "PotPlayerMini32", StringComparison.OrdinalIgnoreCase))
+            if (!IsPotPlayerProcess(processName))
             {
                 return true;
             }
 
             var title = GetWindowTextString(hWnd);
-            if (string.IsNullOrWhiteSpace(title))
-            {
-                return true;
-            }
-
-            windows.Add(new PotPlayerWindow(hWnd, pid, title, processName, ProcessIntegrity.IsProcessElevated(pid)));
+            candidates.Add((hWnd, pid, title, processName, ProcessIntegrity.IsProcessElevated(pid), ScoreWindow(hWnd, title)));
             return true;
         }, nint.Zero);
 
-        return windows;
+        return candidates
+            .GroupBy(candidate => candidate.ProcessId)
+            .Select(group => group.OrderByDescending(candidate => candidate.Score).First())
+            .Select(candidate => new PotPlayerWindow(
+                candidate.Handle,
+                candidate.ProcessId,
+                string.IsNullOrWhiteSpace(candidate.Title) ? candidate.ProcessName : candidate.Title,
+                candidate.ProcessName,
+                candidate.IsElevated))
+            .ToList();
+    }
+
+    private static bool IsPotPlayerProcess(string processName)
+    {
+        return string.Equals(processName, "PotPlayerMini64", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(processName, "PotPlayerMini", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(processName, "PotPlayerMini32", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int ScoreWindow(nint hWnd, string title)
+    {
+        var score = 0;
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            score += 4;
+        }
+
+        if (IsWindowVisible(hWnd) || IsIconic(hWnd))
+        {
+            score += 2;
+        }
+
+        return score;
+    }
+
+    private static bool IsToolWindow(nint hWnd)
+    {
+        var exStyle = GetWindowLongPtr(hWnd, GwlExStyle).ToInt64();
+        return (exStyle & WsExToolWindow) != 0 && (exStyle & WsExAppWindow) == 0;
     }
 
     private static string GetWindowTextString(nint hWnd)
@@ -800,8 +939,6 @@ internal static class PotPlayerWindowFinder
     {
         return GetWindow(hWnd, GwOwner) == nint.Zero;
     }
-
-    private const uint GwOwner = 4;
 
     private delegate bool EnumWindowsProc(nint hWnd, nint lParam);
 
@@ -825,4 +962,17 @@ internal static class PotPlayerWindowFinder
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    private static nint GetWindowLongPtr(nint hWnd, int nIndex)
+    {
+        return nint.Size == 8
+            ? GetWindowLongPtr64(hWnd, nIndex)
+            : GetWindowLong32(hWnd, nIndex);
+    }
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLong")]
+    private static extern nint GetWindowLong32(nint hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr64(nint hWnd, int nIndex);
 }

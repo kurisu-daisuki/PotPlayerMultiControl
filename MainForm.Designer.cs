@@ -146,9 +146,9 @@ partial class MainForm
         windowListToggle.FlatStyle = FlatStyle.Flat;
         windowListToggle.Location = new Point(12, 74);
         windowListToggle.Name = "windowListToggle";
-        windowListToggle.Size = new Size(436, 24);
+        windowListToggle.Size = new Size(436, 28);
         windowListToggle.TabIndex = 12;
-        windowListToggle.Text = "▶ 窗口列表";
+        windowListToggle.Text = "▸  窗口列表";
         windowListToggle.TextAlign = ContentAlignment.MiddleLeft;
         windowListToggle.UseVisualStyleBackColor = true;
         windowListToggle.Click += WindowListToggle_Click;
@@ -158,9 +158,9 @@ partial class MainForm
         logToggle.FlatStyle = FlatStyle.Flat;
         logToggle.Location = new Point(12, 104);
         logToggle.Name = "logToggle";
-        logToggle.Size = new Size(436, 24);
+        logToggle.Size = new Size(436, 28);
         logToggle.TabIndex = 13;
-        logToggle.Text = "▶ 命令栏";
+        logToggle.Text = "▸  运行日志";
         logToggle.TextAlign = ContentAlignment.MiddleLeft;
         logToggle.UseVisualStyleBackColor = true;
         logToggle.Click += LogToggle_Click;
@@ -168,9 +168,10 @@ partial class MainForm
         // listBox
         // 
         listBox.FormattingEnabled = true;
-        listBox.ItemHeight = 15;
+        listBox.ItemHeight = 18;
         listBox.Location = new Point(12, 104);
         listBox.Name = "listBox";
+        listBox.IntegralHeight = false;
         listBox.Size = new Size(436, 190);
         listBox.TabIndex = 14;
         listBox.Visible = false;
@@ -190,7 +191,8 @@ partial class MainForm
         // 
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(460, 140);
+        BackColor = Color.FromArgb(246, 247, 249);
+        ClientSize = new Size(460, 148);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         Controls.Add(logTextBox);
