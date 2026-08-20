@@ -33,15 +33,13 @@ jobs:
           "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
           "zip=PotPlayerMultiControl-$tag-win-x64.zip" >> $env:GITHUB_OUTPUT
 
-      - name: Publish single-file
+      - name: Publish framework-dependent
         run: >
           dotnet publish
           -c Release
           -r win-x64
-          --self-contained true
+          --self-contained false
           -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
           -p:DebugType=none
           -p:DebugSymbols=false
           -p:Version=${{ steps.meta.outputs.version }}
@@ -59,4 +57,7 @@ jobs:
         with:
           files: ${{ steps.meta.outputs.zip }}
           generate_release_notes: true
+          append_body: true
+          body: |
+            Requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (Windows x64). This build is framework-dependent and does not bundle the runtime.
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}

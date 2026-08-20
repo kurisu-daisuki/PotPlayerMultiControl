@@ -35,20 +35,22 @@ A Windows Forms utility to control multiple PotPlayer windows at once: play/paus
 
 ## 快速开始 · Quick start
 
-需要 Windows 与 [.NET 8 SDK](https://dotnet.microsoft.com/download) 或更高。
+需要 Windows 与 [.NET 8 SDK](https://dotnet.microsoft.com/download) 或更高。运行发布包需要 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（Windows x64），不要只装 ASP.NET / 普通 Runtime。
+
+Requires Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download) or newer. Released builds need the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (Windows x64).
 
 ```powershell
 dotnet build
 dotnet run
 ```
 
-发布独立单文件（示例输出到 `out`）：
+发布框架依赖单文件（体积小，示例输出到 `out`）：
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out
+dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out
 ```
 
-GitHub Release：把带工作流的提交推到 `main` 后，打 SemVer tag 并推送即可自动构建并上传 `win-x64` 单文件 zip（例如 `v0.1.0`；预发布用 `v0.2.0-beta.1`）。
+GitHub Release：把带工作流的提交推到 `main` 后，打 SemVer tag 并推送即可自动构建并上传 `win-x64` 框架依赖 zip（例如 `v0.1.0`；预发布用 `v0.2.0-beta.1`）。已发布的 `v0.1.0` 仍是自包含包；之后的 tag 才会是小体积构建。
 
 ```powershell
 git tag v0.1.0
