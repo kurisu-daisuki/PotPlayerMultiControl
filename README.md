@@ -1,83 +1,57 @@
-# PotPlayer 多窗口控制 (PotPlayerMultiControl)
+# PotPlayerMultiControl
 
-**简介**
-- **项目**: 这是一个基于 Windows Forms 的小工具，用于同时控制多个 PotPlayer 窗口的播放/暂停、快进/后退、回到起始点、进度对齐，以及显示或最小化全部窗口。快捷键仅在本程序窗口聚焦时生效。实现见 [MainForm.cs](MainForm.cs)。
+**PotPlayer 多窗口同步控制** · **Multi-window playback control for PotPlayer**
 
-**功能**
-- **自动发现**: 自动检测运行中的 PotPlayer 窗口（进程名包含 `PotPlayerMini` 变种）。
-- **批量控制**: 一键向所有发现的窗口发送播放/暂停、快进/后退、回到起始点、显示或最小化。
-- **快进/后退**: 默认按 5 秒跳转，可在界面修改时间跨度（1–600 秒），设置会记住。
-- **对齐进度**: 以列表中的**主窗口**（第一项）为基准，将其余窗口 seek 到「基准时间 + 该窗口帧偏移」，并量化到帧边界。
-- **帧偏移**: 展开窗口列表后，可为非主窗口设置相对主窗口的帧偏移（可正可负）并选择假定帧率（24/25/30/50/60/120）。设置会按窗口标题持久化。
-- **同步锁**: 对齐后可保持开启，定时监测相对进度；偏差达到约 1 帧时对偏离窗口微调。可随时关闭。
-- **窗体内快捷键**: 本程序聚焦时，左手单手即可操作（见下表）。未聚焦时不会拦截其他软件按键。
-- **管理员窗口**: 列表中标记 `管理员`；普通权限无法控制时，可点击「以管理员身份重启」。
-- **控制窗口置顶**: 启动后默认置顶，可切换取消。
-- **折叠面板**: 窗口列表与命令栏默认收起，点击标题即可展开或折叠。
-- **日志**: 在本地应用数据目录记录运行日志，用于排查与审核。
+Windows Forms 小工具：同时控制多个 [PotPlayer](https://potplayer.daum.net/) 窗口的播放/暂停、快进/后退、回到起始点、进度对齐与显示/最小化。快捷键仅在本程序聚焦时生效。
 
-**快捷键（仅本窗口聚焦，且焦点不在秒数/帧率/帧偏移输入框时）**
+A Windows Forms utility to control multiple PotPlayer windows at once: play/pause, seek, jump to start, timeline alignment, show/minimize. Shortcuts work only while this app has focus.
 
-| 功能 | 按键 |
-|------|------|
-| 后退 | `A` |
-| 播放/暂停 | `S` |
-| 快进 | `D` |
-| 回到起始点 | `Q` |
-| 对齐进度 | `W` |
-| 显示全部 | `E` |
-| 最小化全部 | `R` |
+**文档 · Docs:** [中文详解](docs/zh.md) · [English guide](docs/en.md)
 
-**先决条件**
-- **操作系统**: Windows（需要 Win32 窗口消息支持）。
-- **SDK**: 安装 .NET 8 SDK 或更高（目标框架见项目文件）。查看项目文件: [PotPlayerMultiControl.csproj](PotPlayerMultiControl.csproj)
+---
 
-**构建与运行**
-在仓库根目录（包含 `PotPlayerMultiControl.csproj`）中运行：
+## 功能速览 · Features at a glance
+
+- 自动发现 PotPlayer 窗口，批量播放/暂停、快进/后退、回到起始点、显示或最小化
+- 进度对齐（主窗口 + 帧偏移，帧边界量化）与同步锁（播放中微调漂移）
+- 窗体内左手快捷键（非全局）；控制窗口默认置顶
+- Auto-discover PotPlayer windows; batch play/pause, skip, jump to start, show/minimize
+- Timeline align (primary + frame offset) and sync lock (nudge drift while playing)
+- In-window left-hand shortcuts (not global); control window topmost by default
+
+## 快捷键 · Shortcuts
+
+仅本窗口聚焦时生效 · Active only while this app is focused.
+
+| 功能 / Action | 按键 / Key |
+| --- | --- |
+| 后退 / Skip back | `A` |
+| 播放/暂停 / Play·pause | `S` |
+| 快进 / Skip forward | `D` |
+| 回到起始点 / Jump to start | `Q` |
+| 对齐进度 / Align | `W` |
+| 显示全部 / Show all | `E` |
+| 最小化全部 / Minimize all | `R` |
+
+## 快速开始 · Quick start
+
+需要 Windows 与 [.NET 8 SDK](https://dotnet.microsoft.com/download) 或更高。
 
 ```powershell
 dotnet build
 dotnet run
 ```
 
-或者发布为独立可执行文件（示例，发布到 `out` 目录）：
+发布独立单文件（示例输出到 `out`）：
 
 ```powershell
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out
 ```
 
-**使用说明**
-- 启动后为紧凑图标工具栏，鼠标悬停可查看功能与快捷键；窗口列表和运行日志默认折叠。控制窗口默认置顶，便于切回后单手操作。
-- 点击“播放/暂停全部”或按 `S`，向每个 PotPlayer 窗口发送媒体播放/暂停。
-- 点击“后退/快进”或按 `A` / `D`，按当前时间跨度跳转；可在「秒」输入框中修改，默认 5 秒。
-- 点击“回到起始点”或按 `Q`，将全部视频跳到文件开头。
-- 点击“对齐进度”或按 `W`，将各窗口对齐到主窗口进度（含帧偏移）。无窗口或仅一个窗口时会提示，不会崩溃。
-- 展开「窗口列表」：第一项为主窗口；选中其他窗口后设置「相对主窗口」帧偏移。约定：正数表示该窗口画面比主窗口更靠后（同一时刻进度更大）。例如 A 比主窗口 B 快 240 帧时，A 填 `+240`。
-- 点击同步锁图标可开关播放中自动微调。关闭后不再自动 seek。
-- 点击“显示全部”或按 `E`，还原全部 PotPlayer 窗口并将其置于最上层（置顶，不抢焦点）。
-- 点击“最小化全部”或按 `R`，最小化全部 PotPlayer 窗口。
-- 点击“置顶控制窗口”可取消或重新置顶本程序。
-- 点击“刷新列表”以重新扫描当前窗口。
-- 若列表中出现 `管理员` 且命令失败，点击“以管理员身份重启”。
+更多用法、截图占位、日志路径与实现说明见 [docs/zh.md](docs/zh.md) / [docs/en.md](docs/en.md)。
 
-**日志位置**
-- 日志文件位于 `%LocalAppData%\PotPlayerMultiControl\app.log`，用于记录操作与错误信息。
-- 设置文件位于 `%LocalAppData%\PotPlayerMultiControl\settings.txt`（时间跨度、帧率、同步锁、各窗口帧偏移）。
+## 贡献与许可 · Contributing & license
 
-**实现要点**
-- 使用 Win32 API 枚举窗口并通过进程名过滤 PotPlayer（支持 `PotPlayerMini64/ PotPlayerMini/ PotPlayerMini32`）。
-- 通过发送 `WM_APPCOMMAND`（`APPCOMMAND_MEDIA_PLAY_PAUSE`）实现播放/暂停控制。
-- 通过 `WM_COMMAND` `10243` 将视频跳到文件开头。
-- 通过 PotPlayer `WM_USER` 命令 `0x5004`/`0x5005` 读取并设置播放进度，实现自定义秒数的快进/后退与对齐。
-- 对齐时按假定帧率将目标时间量化到帧边界，回读误差超约 1 帧时短延迟重试。
-- 同步锁以约 300ms 轮询进度，偏差达到 1 帧且经过冷却后才微调，避免频繁 seek。
-- 通过 `ShowWindow` / `SetWindowPos(HWND_TOPMOST)` 还原并置顶全部 PotPlayer 窗口；最小化时取消置顶。
-- 快捷键使用窗体 `ProcessCmdKey`，不再注册系统全局热键。
+欢迎提交 issue 或 pull request。本项目采用 [MIT](LICENSE) 许可证。
 
-**贡献与许可**
-- 欢迎贡献：提交 issue 或 pull request，保持变更小且有说明。
-- 当前仓库未指定许可证：如需发布请添加合适的 `LICENSE` 文件。
-
----
-
-如需我为 README 增加屏幕截图、打包脚本或发布说明，告诉我想要的格式和目标平台，我会继续补充。
+Issues and PRs welcome. Licensed under the [MIT License](LICENSE).
