@@ -14,8 +14,14 @@ partial class MainForm
     private Button pinTopButton;
     private Button rewindButton;
     private Button forwardButton;
+    private Button alignButton;
+    private Button syncLockButton;
     private Label seekSecondsLabel;
     private NumericUpDown seekSecondsUpDown;
+    private Label fpsLabel;
+    private ComboBox fpsComboBox;
+    private Label frameOffsetLabel;
+    private NumericUpDown frameOffsetUpDown;
     private Button windowListToggle;
     private Button logToggle;
     private ListBox listBox;
@@ -45,8 +51,14 @@ partial class MainForm
         pinTopButton = new Button();
         rewindButton = new Button();
         forwardButton = new Button();
+        alignButton = new Button();
+        syncLockButton = new Button();
         seekSecondsLabel = new Label();
         seekSecondsUpDown = new NumericUpDown();
+        fpsLabel = new Label();
+        fpsComboBox = new ComboBox();
+        frameOffsetLabel = new Label();
+        frameOffsetUpDown = new NumericUpDown();
         windowListToggle = new Button();
         logToggle = new Button();
         listBox = new ListBox();
@@ -93,15 +105,65 @@ partial class MainForm
         forwardButton.TabIndex = 4;
         forwardButton.Click += ForwardButton_Click;
         // 
+        // alignButton
+        // 
+        alignButton.Name = "alignButton";
+        alignButton.TabIndex = 5;
+        alignButton.Click += AlignButton_Click;
+        // 
+        // syncLockButton
+        // 
+        syncLockButton.Name = "syncLockButton";
+        syncLockButton.TabIndex = 6;
+        syncLockButton.Click += SyncLockButton_Click;
+        // 
         // seekSecondsUpDown
         // 
         seekSecondsUpDown.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
         seekSecondsUpDown.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
         seekSecondsUpDown.Name = "seekSecondsUpDown";
         seekSecondsUpDown.Size = new Size(48, 23);
-        seekSecondsUpDown.TabIndex = 5;
+        seekSecondsUpDown.TabIndex = 7;
         seekSecondsUpDown.Value = new decimal(new int[] { 5, 0, 0, 0 });
         seekSecondsUpDown.ValueChanged += SeekSecondsUpDown_ValueChanged;
+        // 
+        // fpsLabel
+        // 
+        fpsLabel.AutoSize = true;
+        fpsLabel.Name = "fpsLabel";
+        fpsLabel.Size = new Size(28, 15);
+        fpsLabel.TabIndex = 16;
+        fpsLabel.Text = "帧率";
+        fpsLabel.Visible = false;
+        // 
+        // fpsComboBox
+        // 
+        fpsComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        fpsComboBox.Items.AddRange(new object[] { "24", "25", "30", "50", "60", "120" });
+        fpsComboBox.Name = "fpsComboBox";
+        fpsComboBox.Size = new Size(58, 23);
+        fpsComboBox.TabIndex = 17;
+        fpsComboBox.Visible = false;
+        fpsComboBox.SelectedIndexChanged += FpsComboBox_SelectedIndexChanged;
+        // 
+        // frameOffsetLabel
+        // 
+        frameOffsetLabel.AutoSize = true;
+        frameOffsetLabel.Name = "frameOffsetLabel";
+        frameOffsetLabel.Size = new Size(79, 15);
+        frameOffsetLabel.TabIndex = 18;
+        frameOffsetLabel.Text = "相对主窗口";
+        frameOffsetLabel.Visible = false;
+        // 
+        // frameOffsetUpDown
+        // 
+        frameOffsetUpDown.Maximum = new decimal(new int[] { 1000000, 0, 0, 0 });
+        frameOffsetUpDown.Minimum = new decimal(new int[] { 1000000, 0, 0, -2147483648 });
+        frameOffsetUpDown.Name = "frameOffsetUpDown";
+        frameOffsetUpDown.Size = new Size(72, 23);
+        frameOffsetUpDown.TabIndex = 19;
+        frameOffsetUpDown.Visible = false;
+        frameOffsetUpDown.ValueChanged += FrameOffsetUpDown_ValueChanged;
         // 
         // seekSecondsLabel
         // 
@@ -175,6 +237,7 @@ partial class MainForm
         listBox.Size = new Size(436, 190);
         listBox.TabIndex = 14;
         listBox.Visible = false;
+        listBox.SelectedIndexChanged += ListBox_SelectedIndexChanged;
         // 
         // logTextBox
         // 
@@ -192,11 +255,16 @@ partial class MainForm
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
         BackColor = Color.FromArgb(246, 247, 249);
-        ClientSize = new Size(460, 148);
+        ClientSize = new Size(532, 148);
         FormBorderStyle = FormBorderStyle.FixedSingle;
+        KeyPreview = true;
         MaximizeBox = false;
         Controls.Add(logTextBox);
         Controls.Add(listBox);
+        Controls.Add(frameOffsetUpDown);
+        Controls.Add(frameOffsetLabel);
+        Controls.Add(fpsComboBox);
+        Controls.Add(fpsLabel);
         Controls.Add(logToggle);
         Controls.Add(windowListToggle);
         Controls.Add(seekSecondsUpDown);
@@ -206,6 +274,8 @@ partial class MainForm
         Controls.Add(pinTopButton);
         Controls.Add(minimizeAllButton);
         Controls.Add(showAllButton);
+        Controls.Add(syncLockButton);
+        Controls.Add(alignButton);
         Controls.Add(forwardButton);
         Controls.Add(toggleButton);
         Controls.Add(rewindButton);

@@ -10,23 +10,10 @@ namespace PotPlayerMultiControl;
 
 public sealed partial class MainForm : Form
 {
-    private const int WmHotkey = 0x0312;
-    private const uint ModControl = 0x0002;
-    private const uint ModAlt = 0x0001;
-    private const uint ModNoRepeat = 0x4000;
-    private const uint VkPageUp = 0x21;
-    private const uint VkPageDown = 0x22;
-    private const uint VkH = 0x48;
-    private const uint VkJ = 0x4A;
-    private const uint VkK = 0x4B;
-    private const uint VkL = 0x4C;
-    private const int PlayPauseHotkeyId = 1001;
-    private const int GoToStartHotkeyId = 1002;
-    private const int ShowAllHotkeyId = 1003;
-    private const int MinimizeAllHotkeyId = 1004;
-    private const int RewindHotkeyId = 1005;
-    private const int ForwardHotkeyId = 1006;
     private const int DefaultSeekSeconds = 5;
+    private const int DefaultFps = 30;
+    private const int SyncPollMs = 300;
+    private const int AlignRetryDelayMs = 40;
 
     private const uint WmAppCommand = 0x0319;
     private const uint WmCommand = 0x0111;
@@ -61,12 +48,16 @@ public sealed partial class MainForm : Form
     private const int LogHeight = 236;
     private const int BottomPadding = 12;
     private const int ContentLeft = 12;
-    private const int ContentWidth = 436;
-    private const int FormWidth = 460;
+    private const int ContentWidth = 508;
+    private const int FormWidth = 532;
+    private const int OffsetRowHeight = 28;
     private const string IconGoToStart = "\uE100";
     private const string IconRewind = "\uEB9E";
     private const string IconPlayPause = "\uE768";
     private const string IconForward = "\uEB9D";
+    private const string IconAlign = "\uE8A9";
+    private const string IconSyncOn = "\uE72E";
+    private const string IconSyncOff = "\uE785";
     private const string IconShowAll = "\uE8A7";
     private const string IconMinimize = "\uE921";
     private const string IconPin = "\uE718";
@@ -78,18 +69,29 @@ public sealed partial class MainForm : Form
     private readonly Panel _sepPlayback = new();
     private readonly Panel _sepSeek = new();
     private readonly Panel _sepWindow = new();
+    private readonly Label _frameOffsetUnitLabel = new();
 
     private readonly string _logFilePath;
     private readonly string _settingsFilePath;
     private readonly bool _isElevated = ProcessIntegrity.IsCurrentProcessElevated();
     private readonly TimeSpan _toggleCooldown = TimeSpan.FromMilliseconds(400);
     private readonly TimeSpan _seekCooldown = TimeSpan.FromMilliseconds(120);
+    private readonly TimeSpan _syncCorrectCooldown = TimeSpan.FromMilliseconds(250);
+    private readonly Dictionary<string, int> _frameOffsets = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<nint, DateTime> _lastSyncCorrectAt = new();
+    private readonly System.Windows.Forms.Timer _syncTimer = new();
     private DateTime _lastToggleAt = DateTime.MinValue;
+    private DateTime _lastSyncSummaryAt = DateTime.MinValue;
+    private IReadOnlyList<PotPlayerWindow> _windows = [];
     private bool _toggleInProgress;
     private bool _loadingSettings;
+    private bool _updatingFrameOffsetUi;
     private bool _windowListExpanded;
     private bool _logExpanded;
+    private bool _syncLockEnabled = true;
     private int _discoveredWindowCount;
+    private int _syncCorrectionCount;
+    private long _syncMaxDriftMs;
 
     public MainForm()
     {
@@ -108,9 +110,14 @@ public sealed partial class MainForm : Form
 
         LoadSettings();
         UpdateSeekButtonTexts();
+        UpdateSyncLockButton();
         ApplyDetailsLayout();
         RefreshWindowList();
+        TopMost = true;
+        UpdatePinTopButton();
+        ConfigureSyncTimer();
         Log(_isElevated ? "应用启动（管理员权限）" : "应用启动（普通权限）");
+        Log("快捷键仅在本窗口聚焦时有效：Q 起始 / W 对齐 / A 后退 / S 播放暂停 / D 快进 / E 显示 / R 最小化");
     }
 
     private void ToggleButton_Click(object? sender, EventArgs e)
@@ -186,10 +193,11 @@ public sealed partial class MainForm : Form
             x += buttonSize + gap;
         }
 
-        Place(goToStartButton, IconGoToStart, "回到起始点 (Ctrl+Alt+H)");
-        Place(rewindButton, IconRewind, "后退 (Ctrl+Alt+J)");
-        Place(toggleButton, IconPlayPause, "播放/暂停全部 (Ctrl+Alt+K)", primary: true);
-        Place(forwardButton, IconForward, "快进 (Ctrl+Alt+L)");
+        Place(goToStartButton, IconGoToStart, "回到起始点 (Q)");
+        Place(rewindButton, IconRewind, "后退 (A)");
+        Place(toggleButton, IconPlayPause, "播放/暂停全部 (S)", primary: true);
+        Place(forwardButton, IconForward, "快进 (D)");
+        Place(alignButton, IconAlign, "对齐进度 (W)");
         x += groupGap - gap;
         PlaceSeparator(_sepPlayback, x - groupGap / 2, buttonY, buttonSize);
         x += 2;
@@ -207,8 +215,9 @@ public sealed partial class MainForm : Form
         x += 18 + groupGap;
         PlaceSeparator(_sepSeek, x - groupGap / 2, buttonY, buttonSize);
 
-        Place(showAllButton, IconShowAll, "显示全部并置顶 (Ctrl+Alt+PageUp)");
-        Place(minimizeAllButton, IconMinimize, "最小化全部 (Ctrl+Alt+PageDown)");
+        Place(showAllButton, IconShowAll, "显示全部并置顶 (E)");
+        Place(minimizeAllButton, IconMinimize, "最小化全部 (R)");
+        Place(syncLockButton, IconSyncOn, "同步锁：播放中自动微调对齐");
         x += groupGap - gap;
         PlaceSeparator(_sepWindow, x - groupGap / 2, buttonY, buttonSize);
 
@@ -239,6 +248,34 @@ public sealed partial class MainForm : Form
         UpdatePinTopButton();
         UpdateSeekButtonTexts();
         StyleIconButton(elevateButton);
+        ConfigureOffsetRow();
+    }
+
+    private void ConfigureOffsetRow()
+    {
+        fpsLabel.ForeColor = ColorMuted;
+        fpsLabel.AutoSize = true;
+        fpsLabel.Text = "帧率";
+        frameOffsetLabel.ForeColor = ColorMuted;
+        frameOffsetLabel.AutoSize = true;
+        frameOffsetLabel.Text = "相对主窗口";
+        fpsComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        fpsComboBox.BackColor = ColorSurface;
+        fpsComboBox.FlatStyle = FlatStyle.Flat;
+        frameOffsetUpDown.BorderStyle = BorderStyle.FixedSingle;
+        frameOffsetUpDown.BackColor = ColorSurface;
+        frameOffsetUpDown.Minimum = -1000000;
+        frameOffsetUpDown.Maximum = 1000000;
+        _frameOffsetUnitLabel.AutoSize = true;
+        _frameOffsetUnitLabel.ForeColor = ColorMuted;
+        _frameOffsetUnitLabel.Text = "帧";
+        if (!Controls.Contains(_frameOffsetUnitLabel))
+        {
+            Controls.Add(_frameOffsetUnitLabel);
+        }
+
+        toolTip.SetToolTip(fpsComboBox, "假定帧率，用于帧偏移换算与帧边界量化");
+        toolTip.SetToolTip(frameOffsetUpDown, "相对主窗口的帧偏移（正数表示该窗口画面更靠后）");
     }
 
     private void PlaceSeparator(Panel separator, int x, int y, int height)
@@ -256,7 +293,7 @@ public sealed partial class MainForm : Form
     private void StyleIconButton(Button button)
     {
         var primary = button.Tag as string == "primary";
-        var active = button == pinTopButton && TopMost;
+        var active = (button == pinTopButton && TopMost) || (button == syncLockButton && _syncLockEnabled);
         button.Cursor = Cursors.Hand;
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 0;
@@ -308,6 +345,79 @@ public sealed partial class MainForm : Form
         toolTip.SetToolTip(pinTopButton, TopMost ? "取消控制窗口置顶" : "置顶控制窗口");
     }
 
+    private void AlignButton_Click(object? sender, EventArgs e)
+    {
+        RequestAlign("按钮");
+    }
+
+    private void SyncLockButton_Click(object? sender, EventArgs e)
+    {
+        _syncLockEnabled = !_syncLockEnabled;
+        UpdateSyncLockButton();
+        SaveSettings();
+        Log(_syncLockEnabled ? "同步锁已开启" : "同步锁已关闭");
+        SetStatus(_syncLockEnabled ? "同步锁已开启，将监测并微调进度" : "同步锁已关闭");
+    }
+
+    private void UpdateSyncLockButton()
+    {
+        syncLockButton.Text = _syncLockEnabled ? IconSyncOn : IconSyncOff;
+        StyleIconButton(syncLockButton);
+        toolTip.SetToolTip(syncLockButton, _syncLockEnabled
+            ? "关闭同步锁（当前开启：播放中自动微调）"
+            : "开启同步锁（关闭中：不对齐后自动微调）");
+        if (_syncLockEnabled)
+        {
+            _syncTimer.Start();
+        }
+        else
+        {
+            _syncTimer.Stop();
+            _syncCorrectionCount = 0;
+            _syncMaxDriftMs = 0;
+        }
+    }
+
+    private void ConfigureSyncTimer()
+    {
+        _syncTimer.Interval = SyncPollMs;
+        _syncTimer.Tick += SyncTimer_Tick;
+        if (_syncLockEnabled)
+        {
+            _syncTimer.Start();
+        }
+    }
+
+    private void FpsComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        SaveSettings();
+        UpdateFrameOffsetHint();
+    }
+
+    private void FrameOffsetUpDown_ValueChanged(object? sender, EventArgs e)
+    {
+        if (_updatingFrameOffsetUi)
+        {
+            return;
+        }
+
+        var window = SelectedWindow();
+        if (window is null || IsMasterWindow(window))
+        {
+            UpdateFrameOffsetHint();
+            return;
+        }
+
+        _frameOffsets[OffsetKey(window)] = (int)frameOffsetUpDown.Value;
+        SaveSettings();
+        UpdateFrameOffsetHint();
+    }
+
+    private void ListBox_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        LoadFrameOffsetEditor();
+    }
+
     private void RewindButton_Click(object? sender, EventArgs e)
     {
         RequestSeek("按钮", rewind: true);
@@ -345,10 +455,18 @@ public sealed partial class MainForm : Form
         y += HeaderHeight + SectionGap;
 
         listBox.Visible = _windowListExpanded;
+        var showOffsetRow = _windowListExpanded;
+        fpsLabel.Visible = showOffsetRow;
+        fpsComboBox.Visible = showOffsetRow;
+        frameOffsetLabel.Visible = showOffsetRow;
+        frameOffsetUpDown.Visible = showOffsetRow;
+        _frameOffsetUnitLabel.Visible = showOffsetRow;
         if (_windowListExpanded)
         {
             listBox.Location = new Point(ContentLeft, y);
-            y += ListHeight + SectionGap;
+            y += ListHeight + 6;
+            LayoutOffsetRow(y);
+            y += OffsetRowHeight + SectionGap;
         }
 
         logToggle.Location = new Point(ContentLeft, y);
@@ -370,6 +488,28 @@ public sealed partial class MainForm : Form
         ResumeLayout(true);
     }
 
+    private void LayoutOffsetRow(int y)
+    {
+        const int gap = 6;
+        const int groupGap = 16;
+        var x = ContentLeft;
+        var labelY = y + 5;
+        var fieldY = y + 2;
+
+        fpsLabel.Location = new Point(x, labelY);
+        x += fpsLabel.PreferredWidth + gap;
+        fpsComboBox.Location = new Point(x, fieldY);
+        fpsComboBox.Size = new Size(58, 23);
+        x += fpsComboBox.Width + groupGap;
+
+        frameOffsetLabel.Location = new Point(x, labelY);
+        x += frameOffsetLabel.PreferredWidth + gap;
+        frameOffsetUpDown.Location = new Point(x, fieldY);
+        frameOffsetUpDown.Size = new Size(72, 23);
+        x += frameOffsetUpDown.Width + gap;
+        _frameOffsetUnitLabel.Location = new Point(x, labelY);
+    }
+
     private void UpdateSectionHeaders()
     {
         var chevronList = _windowListExpanded ? "▾" : "▸";
@@ -379,84 +519,60 @@ public sealed partial class MainForm : Form
         logToggle.Text = $"{chevronLog}  运行日志";
     }
 
-    protected override void OnHandleCreated(EventArgs e)
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        base.OnHandleCreated(e);
-        RegisterGlobalHotkey(PlayPauseHotkeyId, VkK, "Ctrl+Alt+K");
-        RegisterGlobalHotkey(GoToStartHotkeyId, VkH, "Ctrl+Alt+H");
-        RegisterGlobalHotkey(RewindHotkeyId, VkJ, "Ctrl+Alt+J");
-        RegisterGlobalHotkey(ForwardHotkeyId, VkL, "Ctrl+Alt+L");
-        RegisterGlobalHotkey(ShowAllHotkeyId, VkPageUp, "Ctrl+Alt+PageUp");
-        RegisterGlobalHotkey(MinimizeAllHotkeyId, VkPageDown, "Ctrl+Alt+PageDown");
+        if (IsTypingInInputControl())
+        {
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        switch (keyData)
+        {
+            case Keys.A:
+                Log("触发快捷键: A");
+                RequestSeek("快捷键", rewind: true);
+                return true;
+            case Keys.S:
+                Log("触发快捷键: S");
+                RequestCommand("快捷键", "播放/暂停", TrySendPlayPause);
+                return true;
+            case Keys.D:
+                Log("触发快捷键: D");
+                RequestSeek("快捷键", rewind: false);
+                return true;
+            case Keys.Q:
+                Log("触发快捷键: Q");
+                RequestCommand("快捷键", "回到起始点", TrySendGoToStart);
+                return true;
+            case Keys.W:
+                Log("触发快捷键: W");
+                RequestAlign("快捷键");
+                return true;
+            case Keys.E:
+                Log("触发快捷键: E");
+                RequestCommand("快捷键", "显示窗口", TryShowWindow);
+                return true;
+            case Keys.R:
+                Log("触发快捷键: R");
+                RequestCommand("快捷键", "最小化窗口", TryMinimizeWindow);
+                return true;
+            default:
+                return base.ProcessCmdKey(ref msg, keyData);
+        }
     }
 
-    private void RegisterGlobalHotkey(int id, uint virtualKey, string displayName)
+    private bool IsTypingInInputControl()
     {
-        var registered = RegisterHotKey(Handle, id, ModControl | ModAlt | ModNoRepeat, virtualKey);
-        Log(registered ? $"全局热键注册成功: {displayName}" : $"全局热键注册失败: {displayName}");
+        var focused = ActiveControl;
+        return focused is NumericUpDown or ComboBox or TextBox { ReadOnly: false };
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _ = UnregisterHotKey(Handle, PlayPauseHotkeyId);
-        _ = UnregisterHotKey(Handle, GoToStartHotkeyId);
-        _ = UnregisterHotKey(Handle, ShowAllHotkeyId);
-        _ = UnregisterHotKey(Handle, MinimizeAllHotkeyId);
-        _ = UnregisterHotKey(Handle, RewindHotkeyId);
-        _ = UnregisterHotKey(Handle, ForwardHotkeyId);
+        _syncTimer.Stop();
+        _syncTimer.Dispose();
         Log("应用退出");
         base.OnFormClosed(e);
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == WmHotkey)
-        {
-            var hotkeyId = m.WParam.ToInt32();
-            if (hotkeyId == PlayPauseHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+K");
-                RequestCommand("热键", "播放/暂停", TrySendPlayPause);
-                return;
-            }
-
-            if (hotkeyId == GoToStartHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+H");
-                RequestCommand("热键", "回到起始点", TrySendGoToStart);
-                return;
-            }
-
-            if (hotkeyId == ShowAllHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+PageUp");
-                RequestCommand("热键", "显示窗口", TryShowWindow);
-                return;
-            }
-
-            if (hotkeyId == MinimizeAllHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+PageDown");
-                RequestCommand("热键", "最小化窗口", TryMinimizeWindow);
-                return;
-            }
-
-            if (hotkeyId == RewindHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+J");
-                RequestSeek("热键", rewind: true);
-                return;
-            }
-
-            if (hotkeyId == ForwardHotkeyId)
-            {
-                Log("触发热键: Ctrl+Alt+L");
-                RequestSeek("热键", rewind: false);
-                return;
-            }
-        }
-
-        base.WndProc(ref m);
     }
 
     private void RequestCommand(string source, string actionName, Func<nint, bool> send, TimeSpan? cooldown = null)
@@ -484,6 +600,188 @@ public sealed partial class MainForm : Form
         var deltaMs = seconds * 1000 * (rewind ? -1 : 1);
         var actionName = rewind ? $"后退 {seconds}秒" : $"快进 {seconds}秒";
         RequestCommand(source, actionName, hwnd => TrySendSeek(hwnd, deltaMs), _seekCooldown);
+    }
+
+    private void RequestAlign(string source)
+    {
+        if (_toggleInProgress)
+        {
+            Log($"忽略重复触发: {source} 对齐进度（上次操作尚未完成）");
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (now - _lastToggleAt < _seekCooldown)
+        {
+            Log($"忽略重复触发: {source} 对齐进度（冷却中）");
+            return;
+        }
+
+        _lastToggleAt = now;
+        AlignAll(source);
+    }
+
+    private void AlignAll(string source)
+    {
+        _toggleInProgress = true;
+        try
+        {
+            var windows = PotPlayerWindowFinder.FindAll();
+            if (windows.Count == 0)
+            {
+                SetStatus("未找到 PotPlayer 窗口");
+                Log($"{source} 对齐失败: 未找到 PotPlayer 窗口");
+                RefreshWindowList(windows);
+                return;
+            }
+
+            if (windows.Count == 1)
+            {
+                SetStatus("仅发现 1 个窗口，无需对齐");
+                Log($"{source} 对齐跳过: 仅 1 个窗口");
+                RefreshWindowList(windows);
+                return;
+            }
+
+            var master = windows[0];
+            if (!TryGetCurrentTime(master.Handle, out var baseMs))
+            {
+                var blocked = !_isElevated && master.IsElevated;
+                SetStatus(
+                    blocked
+                        ? "无法读取主窗口进度，管理员窗口无法控制，请提权后重试"
+                        : "无法读取主窗口进度",
+                    warning: true);
+                Log($"{source} 对齐失败: 无法读取主窗口 0x{master.Handle.ToInt64():X8} {master.Title}");
+                RefreshWindowList(windows);
+                return;
+            }
+
+            var fps = SelectedFps;
+            var success = 0;
+            var elevationBlocked = 0;
+            var maxErrorMs = 0L;
+            foreach (var window in windows)
+            {
+                var targetMs = TargetTimeMs(baseMs, GetFrameOffset(window), fps);
+                if (!TryGetTotalTime(window.Handle, out var totalMs) && Marshal.GetLastWin32Error() == 5)
+                {
+                    if (!_isElevated && window.IsElevated)
+                    {
+                        elevationBlocked++;
+                    }
+
+                    Log($"对齐失败: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                    continue;
+                }
+
+                targetMs = ClampTime(targetMs, totalMs);
+                if (!TrySetCurrentTimeWithRetry(window.Handle, targetMs, fps, out var errorMs))
+                {
+                    if (!_isElevated && window.IsElevated)
+                    {
+                        elevationBlocked++;
+                        Log($"对齐失败（UIPI，目标为管理员窗口）: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                    }
+                    else
+                    {
+                        Log($"对齐失败: 0x{window.Handle.ToInt64():X8} {window.Title}");
+                    }
+
+                    continue;
+                }
+
+                success++;
+                maxErrorMs = Math.Max(maxErrorMs, errorMs);
+                var offset = GetFrameOffset(window);
+                Log($"对齐成功: 0x{window.Handle.ToInt64():X8} {window.Title} 目标 {targetMs}ms 误差 {errorMs}ms 帧偏移 {offset}");
+            }
+
+            var frameMs = FrameDurationMs(fps);
+            var maxErrorFrames = frameMs <= 0 ? 0 : (maxErrorMs + frameMs - 1) / frameMs;
+            var summary =
+                elevationBlocked > 0 && !_isElevated
+                    ? $"对齐 {success}/{windows.Count}，{elevationBlocked} 个管理员窗口无法控制，请提权后重试"
+                    : $"对齐 {success}/{windows.Count}，最大误差 {maxErrorMs}ms（约 {maxErrorFrames} 帧，{fps}fps）";
+            SetStatus(summary, warning: elevationBlocked > 0 && !_isElevated);
+            Log($"{source} {statusLabel.Text}");
+            var resultStatus = statusLabel.Text;
+            var resultWarning = statusLabel.ForeColor == ColorWarning;
+            RefreshWindowList(windows);
+            SetStatus(resultStatus, resultWarning);
+        }
+        finally
+        {
+            _toggleInProgress = false;
+        }
+    }
+
+    private void SyncTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_syncLockEnabled || _toggleInProgress || !IsHandleCreated)
+        {
+            return;
+        }
+
+        var windows = PotPlayerWindowFinder.FindAll();
+        if (windows.Count < 2)
+        {
+            return;
+        }
+
+        var master = windows[0];
+        if (!TryGetCurrentTime(master.Handle, out var baseMs))
+        {
+            return;
+        }
+
+        var fps = SelectedFps;
+        var thresholdMs = Math.Max(1, FrameDurationMs(fps));
+        var now = DateTime.UtcNow;
+        var corrected = 0;
+        var tickMaxDrift = 0L;
+        foreach (var window in windows)
+        {
+            var expected = TargetTimeMs(baseMs, GetFrameOffset(window), fps);
+            if (!TryGetTotalTime(window.Handle, out var totalMs))
+            {
+                continue;
+            }
+
+            expected = ClampTime(expected, totalMs);
+            if (!TryGetCurrentTime(window.Handle, out var actualMs))
+            {
+                continue;
+            }
+
+            var drift = Math.Abs(actualMs - expected);
+            tickMaxDrift = Math.Max(tickMaxDrift, drift);
+            _syncMaxDriftMs = Math.Max(_syncMaxDriftMs, drift);
+            if (drift < thresholdMs)
+            {
+                continue;
+            }
+
+            if (_lastSyncCorrectAt.TryGetValue(window.Handle, out var lastAt) && now - lastAt < _syncCorrectCooldown)
+            {
+                continue;
+            }
+
+            if (!TrySetCurrentTime(window.Handle, expected))
+            {
+                continue;
+            }
+
+            _lastSyncCorrectAt[window.Handle] = now;
+            _syncCorrectionCount++;
+            corrected++;
+        }
+
+        if (corrected > 0 && now - _lastSyncSummaryAt >= TimeSpan.FromSeconds(5))
+        {
+            _lastSyncSummaryAt = now;
+            Log($"同步锁微调 {corrected} 个窗口，累计 {_syncCorrectionCount} 次，本轮最大偏差 {tickMaxDrift}ms，会话最大 {_syncMaxDriftMs}ms");
+        }
     }
 
     private void SendToAll(string actionName, Func<nint, bool> send)
@@ -555,44 +853,129 @@ public sealed partial class MainForm : Form
 
     private int SeekSeconds => Math.Max(1, (int)seekSecondsUpDown.Value);
 
-    private bool TrySendSeek(nint hwnd, int deltaMs)
+    private int SelectedFps
+    {
+        get
+        {
+            if (fpsComboBox.SelectedItem is string text && int.TryParse(text, out var fps) && fps > 0)
+            {
+                return fps;
+            }
+
+            return DefaultFps;
+        }
+    }
+
+    private static int FrameDurationMs(int fps) => Math.Max(1, 1000 / fps);
+
+    private static long ClampTime(long targetMs, long totalMs)
+    {
+        if (targetMs < 0)
+        {
+            return 0;
+        }
+
+        if (totalMs > 0 && targetMs > totalMs)
+        {
+            return totalMs;
+        }
+
+        return targetMs;
+    }
+
+    private static long QuantizeToFrame(long ms, int fps)
+    {
+        var frame = (ms * fps + 500L) / 1000L;
+        return frame * 1000L / fps;
+    }
+
+    private static long TargetTimeMs(long baseMs, int frameOffset, int fps)
+    {
+        var offsetMs = frameOffset * 1000L / fps;
+        return QuantizeToFrame(baseMs + offsetMs, fps);
+    }
+
+    private bool TryGetCurrentTime(nint hwnd, out long currentMs)
     {
         SetLastError(0);
         var current = SendMessage(hwnd, WmUser, PotGetCurrentTime, nint.Zero);
         if (Marshal.GetLastWin32Error() == 5)
         {
+            currentMs = 0;
             return false;
         }
 
+        currentMs = Math.Max(0L, current.ToInt64());
+        return true;
+    }
+
+    private bool TryGetTotalTime(nint hwnd, out long totalMs)
+    {
         SetLastError(0);
         var total = SendMessage(hwnd, WmUser, PotGetTotalTime, nint.Zero);
         if (Marshal.GetLastWin32Error() == 5)
         {
+            totalMs = 0;
             return false;
         }
 
-        var currentMs = Math.Max(0L, current.ToInt64());
-        var totalMs = Math.Max(0L, total.ToInt64());
-        var target = currentMs + deltaMs;
-        if (target < 0)
+        totalMs = Math.Max(0L, total.ToInt64());
+        return true;
+    }
+
+    private bool TrySetCurrentTime(nint hwnd, long targetMs)
+    {
+        SetLastError(0);
+        _ = SendMessage(hwnd, WmUser, PotSetCurrentTime, (nint)targetMs);
+        return Marshal.GetLastWin32Error() != 5;
+    }
+
+    private bool TrySetCurrentTimeWithRetry(nint hwnd, long targetMs, int fps, out long errorMs)
+    {
+        errorMs = 0;
+        var threshold = FrameDurationMs(fps);
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            target = 0;
-        }
-        else if (totalMs > 0 && target > totalMs)
-        {
-            target = totalMs;
+            if (!TrySetCurrentTime(hwnd, targetMs))
+            {
+                return false;
+            }
+
+            if (attempt < 2)
+            {
+                Thread.Sleep(AlignRetryDelayMs);
+            }
+
+            if (!TryGetCurrentTime(hwnd, out var actualMs))
+            {
+                return false;
+            }
+
+            errorMs = Math.Abs(actualMs - targetMs);
+            if (errorMs <= threshold)
+            {
+                return true;
+            }
         }
 
-        SetLastError(0);
-        _ = SendMessage(hwnd, WmUser, PotSetCurrentTime, (nint)target);
-        return Marshal.GetLastWin32Error() != 5;
+        return true;
+    }
+
+    private bool TrySendSeek(nint hwnd, int deltaMs)
+    {
+        if (!TryGetCurrentTime(hwnd, out var currentMs) || !TryGetTotalTime(hwnd, out var totalMs))
+        {
+            return false;
+        }
+
+        return TrySetCurrentTime(hwnd, ClampTime(currentMs + deltaMs, totalMs));
     }
 
     private void UpdateSeekButtonTexts()
     {
         var seconds = SeekSeconds;
-        toolTip.SetToolTip(rewindButton, $"后退 {seconds}秒 (Ctrl+Alt+J)");
-        toolTip.SetToolTip(forwardButton, $"快进 {seconds}秒 (Ctrl+Alt+L)");
+        toolTip.SetToolTip(rewindButton, $"后退 {seconds}秒 (A)");
+        toolTip.SetToolTip(forwardButton, $"快进 {seconds}秒 (D)");
         toolTip.SetToolTip(seekSecondsUpDown, $"快进/后退时间跨度：{seconds} 秒");
     }
 
@@ -602,24 +985,94 @@ public sealed partial class MainForm : Form
         try
         {
             var seconds = DefaultSeekSeconds;
-            if (File.Exists(_settingsFilePath)
-                && int.TryParse(File.ReadAllText(_settingsFilePath).Trim(), out var saved)
-                && saved >= (int)seekSecondsUpDown.Minimum
-                && saved <= (int)seekSecondsUpDown.Maximum)
+            var fps = DefaultFps;
+            _syncLockEnabled = true;
+            _frameOffsets.Clear();
+
+            if (File.Exists(_settingsFilePath))
             {
-                seconds = saved;
+                var raw = File.ReadAllText(_settingsFilePath).Trim();
+                if (int.TryParse(raw, out var legacySeconds)
+                    && legacySeconds >= (int)seekSecondsUpDown.Minimum
+                    && legacySeconds <= (int)seekSecondsUpDown.Maximum)
+                {
+                    seconds = legacySeconds;
+                }
+                else
+                {
+                    foreach (var line in raw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("Offset\t", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var parts = trimmed.Split('\t');
+                            if (parts.Length >= 3 && int.TryParse(parts[^1], out var offset))
+                            {
+                                var title = string.Join('\t', parts.Skip(1).Take(parts.Length - 2));
+                                if (!string.IsNullOrWhiteSpace(title))
+                                {
+                                    _frameOffsets[title] = offset;
+                                }
+                            }
+
+                            continue;
+                        }
+
+                        var split = trimmed.Split('=', 2);
+                        if (split.Length != 2)
+                        {
+                            continue;
+                        }
+
+                        var key = split[0].Trim();
+                        var value = split[1].Trim();
+                        if (key.Equals("SeekSeconds", StringComparison.OrdinalIgnoreCase)
+                            && int.TryParse(value, out var savedSeconds)
+                            && savedSeconds >= (int)seekSecondsUpDown.Minimum
+                            && savedSeconds <= (int)seekSecondsUpDown.Maximum)
+                        {
+                            seconds = savedSeconds;
+                        }
+                        else if (key.Equals("Fps", StringComparison.OrdinalIgnoreCase)
+                            && int.TryParse(value, out var savedFps)
+                            && savedFps > 0)
+                        {
+                            fps = savedFps;
+                        }
+                        else if (key.Equals("SyncLock", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _syncLockEnabled = value is "1" or "true" or "True";
+                        }
+                    }
+                }
             }
 
             seekSecondsUpDown.Value = seconds;
+            SelectFps(fps);
         }
         catch
         {
             seekSecondsUpDown.Value = DefaultSeekSeconds;
+            SelectFps(DefaultFps);
+            _syncLockEnabled = true;
         }
         finally
         {
             _loadingSettings = false;
         }
+    }
+
+    private void SelectFps(int fps)
+    {
+        var text = fps.ToString();
+        var index = fpsComboBox.Items.IndexOf(text);
+        if (index < 0)
+        {
+            fpsComboBox.Items.Add(text);
+            index = fpsComboBox.Items.IndexOf(text);
+        }
+
+        fpsComboBox.SelectedIndex = index >= 0 ? index : fpsComboBox.Items.IndexOf(DefaultFps.ToString());
     }
 
     private void SaveSettings()
@@ -631,7 +1084,18 @@ public sealed partial class MainForm : Form
 
         try
         {
-            File.WriteAllText(_settingsFilePath, SeekSeconds.ToString(), Encoding.UTF8);
+            var lines = new List<string>
+            {
+                $"SeekSeconds={SeekSeconds}",
+                $"Fps={SelectedFps}",
+                $"SyncLock={(_syncLockEnabled ? "1" : "0")}"
+            };
+            foreach (var pair in _frameOffsets.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                lines.Add($"Offset\t{pair.Key.Replace('\t', ' ')}\t{pair.Value}");
+            }
+
+            File.WriteAllLines(_settingsFilePath, lines, Encoding.UTF8);
         }
         catch
         {
@@ -659,14 +1123,38 @@ public sealed partial class MainForm : Form
 
     private void RefreshWindowList(IReadOnlyList<PotPlayerWindow> windows)
     {
+        var selectedKey = SelectedWindow() is { } selected ? OffsetKey(selected) : null;
+        _windows = windows;
         _discoveredWindowCount = windows.Count;
+        listBox.BeginUpdate();
         listBox.Items.Clear();
-        foreach (var window in windows)
+        for (var i = 0; i < windows.Count; i++)
         {
+            var window = windows[i];
             var title = string.IsNullOrWhiteSpace(window.Title) ? window.ProcessName : window.Title;
             var elevationTag = window.IsElevated ? "  · 管理员" : "";
-            listBox.Items.Add($"{title}{elevationTag}");
+            var masterTag = i == 0 ? "  · 主窗口" : "";
+            var offset = GetFrameOffset(window);
+            var offsetTag = i == 0 || offset == 0 ? "" : $"  · {FormatFrameOffset(offset)}";
+            listBox.Items.Add($"{title}{masterTag}{elevationTag}{offsetTag}");
         }
+
+        listBox.EndUpdate();
+        if (selectedKey is not null)
+        {
+            var restore = windows.ToList().FindIndex(window => OffsetKey(window) == selectedKey);
+            if (restore >= 0)
+            {
+                listBox.SelectedIndex = restore;
+            }
+        }
+
+        if (listBox.SelectedIndex < 0 && windows.Count > 0)
+        {
+            listBox.SelectedIndex = 0;
+        }
+
+        LoadFrameOffsetEditor();
 
         var elevatedCount = windows.Count(window => window.IsElevated);
         if (!_isElevated && elevatedCount > 0)
@@ -682,6 +1170,68 @@ public sealed partial class MainForm : Form
         StyleIconButton(elevateButton);
         UpdateSectionHeaders();
         Log(statusLabel.Text);
+    }
+
+    private PotPlayerWindow? SelectedWindow()
+    {
+        var index = listBox.SelectedIndex;
+        if (index < 0 || index >= _windows.Count)
+        {
+            return null;
+        }
+
+        return _windows[index];
+    }
+
+    private bool IsMasterWindow(PotPlayerWindow window) =>
+        _windows.Count > 0 && window.Handle == _windows[0].Handle;
+
+    private static string OffsetKey(PotPlayerWindow window) =>
+        string.IsNullOrWhiteSpace(window.Title) ? window.ProcessName : window.Title;
+
+    private int GetFrameOffset(PotPlayerWindow window) =>
+        IsMasterWindow(window) ? 0 : _frameOffsets.GetValueOrDefault(OffsetKey(window));
+
+    private static string FormatFrameOffset(int offset) =>
+        offset > 0 ? $"+{offset} 帧" : $"{offset} 帧";
+
+    private void LoadFrameOffsetEditor()
+    {
+        _updatingFrameOffsetUi = true;
+        try
+        {
+            var window = SelectedWindow();
+            if (window is null)
+            {
+                frameOffsetUpDown.Enabled = false;
+                frameOffsetUpDown.Value = 0;
+                UpdateFrameOffsetHint();
+                return;
+            }
+
+            var isMaster = IsMasterWindow(window);
+            frameOffsetUpDown.Enabled = !isMaster;
+            var offset = GetFrameOffset(window);
+            frameOffsetUpDown.Value = Math.Clamp(offset, (int)frameOffsetUpDown.Minimum, (int)frameOffsetUpDown.Maximum);
+            UpdateFrameOffsetHint();
+        }
+        finally
+        {
+            _updatingFrameOffsetUi = false;
+        }
+    }
+
+    private void UpdateFrameOffsetHint()
+    {
+        frameOffsetLabel.Text = "相对主窗口";
+        var window = SelectedWindow();
+        if (window is not null && IsMasterWindow(window))
+        {
+            toolTip.SetToolTip(frameOffsetUpDown, "列表第一项为主窗口，帧偏移固定为 0");
+            return;
+        }
+
+        toolTip.SetToolTip(frameOffsetUpDown, "正数表示该窗口画面比主窗口更靠后（同一时刻进度更大）");
     }
 
     private void SetStatus(string text, bool warning = false)
@@ -733,12 +1283,6 @@ public sealed partial class MainForm : Form
         {
         }
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterHotKey(nint hWnd, int id);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SendMessage(nint hWnd, uint msg, nint wParam, nint lParam);
