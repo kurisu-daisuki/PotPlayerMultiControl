@@ -48,6 +48,13 @@ dotnet run
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out
 ```
 
+GitHub Release：把带工作流的提交推到 `main` 后，打 SemVer tag 并推送即可自动构建并上传 `win-x64` 单文件 zip（例如 `v0.1.0`；预发布用 `v0.2.0-beta.1`）。
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 更多用法、截图占位、日志路径与实现说明见 [docs/zh.md](docs/zh.md) / [docs/en.md](docs/en.md)。
 
 ## 贡献与许可 · Contributing & license

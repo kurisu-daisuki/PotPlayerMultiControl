@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Resolve version from tag
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Tag '$tag' must match vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease"
+          }
+          $version = $tag.Substring(1)
+          $prerelease = $tag.Contains("-").ToString().ToLowerInvariant()
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
+          "zip=PotPlayerMultiControl-$tag-win-x64.zip" >> $env:GITHUB_OUTPUT
+
+      - name: Publish single-file
+        run: >
+          dotnet publish
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -p:Version=${{ steps.meta.outputs.version }}
+          -o publish
+
+      - name: Pack zip
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path publish -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { throw "No exe found in publish/" }
+          Compress-Archive -Path $exe.FullName -DestinationPath ${{ steps.meta.outputs.zip }} -Force
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.meta.outputs.zip }}
+          generate_release_notes: true
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}

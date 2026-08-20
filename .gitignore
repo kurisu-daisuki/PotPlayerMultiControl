@@ -26,6 +26,7 @@ coverage*.xml
 
 # Publish
 publish/
+out/
 *.pubxml
 
 # Local secrets
