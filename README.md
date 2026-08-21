@@ -35,22 +35,29 @@ A Windows Forms utility to control multiple PotPlayer windows at once: play/paus
 
 ## 快速开始 · Quick start
 
-需要 Windows 与 [.NET 8 SDK](https://dotnet.microsoft.com/download) 或更高。运行发布包需要 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（Windows x64），不要只装 ASP.NET / 普通 Runtime。
+需要 Windows 与 [.NET 8 SDK](https://dotnet.microsoft.com/download) 或更高。
 
-Requires Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download) or newer. Released builds need the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (Windows x64).
+Requires Windows and the [.NET 8 SDK](https://dotnet.microsoft.com/download) or newer.
 
 ```powershell
 dotnet build
 dotnet run
 ```
 
-发布框架依赖单文件（体积小，示例输出到 `out`）：
+本地发布单文件（示例输出到 `out`）：
 
 ```powershell
+# 框架依赖（体积小，运行需 .NET 8 Desktop Runtime）
 dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out
+
+# 自包含（体积大，无需另装运行时）
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o out
 ```
 
-GitHub Release：把带工作流的提交推到 `main` 后，打 SemVer tag 并推送即可自动构建并上传 `win-x64` 框架依赖 zip（例如 `v0.1.0`；预发布用 `v0.2.0-beta.1`）。已发布的 `v0.1.0` 仍是自包含包；之后的 tag 才会是小体积构建。
+GitHub Release：推送 SemVer tag 后，同一版本会上传两个 zip（例如 `v0.1.0`；预发布用 `v0.2.0-beta.1`）：
+
+- `PotPlayerMultiControl-v*-win-x64.zip`：框架依赖，约 0.1 MB，需 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)（Windows x64，不要只装 ASP.NET / 普通 Runtime）
+- `PotPlayerMultiControl-v*-win-x64-self-contained.zip`：自包含，约 60 MB，解压即可运行
 
 ```powershell
 git tag v0.1.0

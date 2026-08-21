@@ -31,7 +31,8 @@ jobs:
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
           "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
-          "zip=PotPlayerMultiControl-$tag-win-x64.zip" >> $env:GITHUB_OUTPUT
+          "zip_fd=PotPlayerMultiControl-$tag-win-x64.zip" >> $env:GITHUB_OUTPUT
+          "zip_sc=PotPlayerMultiControl-$tag-win-x64-self-contained.zip" >> $env:GITHUB_OUTPUT
 
       - name: Publish framework-dependent
         run: >
@@ -43,21 +44,44 @@ jobs:
           -p:DebugType=none
           -p:DebugSymbols=false
           -p:Version=${{ steps.meta.outputs.version }}
-          -o publish
+          -o publish/fd
 
-      - name: Pack zip
+      - name: Publish self-contained
+        run: >
+          dotnet publish
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -p:Version=${{ steps.meta.outputs.version }}
+          -o publish/sc
+
+      - name: Pack zips
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Path publish -Filter *.exe | Select-Object -First 1
-          if (-not $exe) { throw "No exe found in publish/" }
-          Compress-Archive -Path $exe.FullName -DestinationPath ${{ steps.meta.outputs.zip }} -Force
+          function Pack-Exe([string]$dir, [string]$zip) {
+            $exe = Get-ChildItem -Path $dir -Filter *.exe | Select-Object -First 1
+            if (-not $exe) { throw "No exe found in $dir" }
+            Compress-Archive -Path $exe.FullName -DestinationPath $zip -Force
+          }
+          Pack-Exe publish/fd ${{ steps.meta.outputs.zip_fd }}
+          Pack-Exe publish/sc ${{ steps.meta.outputs.zip_sc }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.meta.outputs.zip }}
+          files: |
+            ${{ steps.meta.outputs.zip_fd }}
+            ${{ steps.meta.outputs.zip_sc }}
           generate_release_notes: true
           append_body: true
           body: |
-            Requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (Windows x64). This build is framework-dependent and does not bundle the runtime.
+            Two Windows x64 builds:
+
+            - `*-win-x64.zip` — framework-dependent (~0.1 MB). Requires the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (not ASP.NET / the regular Runtime).
+            - `*-win-x64-self-contained.zip` — self-contained (~60 MB). No extra runtime install; just unzip and run.
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
